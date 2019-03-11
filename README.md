@@ -19,6 +19,7 @@ Includes rudimentary support for [embedded-graphics](https://github.com/jamwaffl
   `Drawing` support.
 - Tests
 - An example
+- Support full command list
 
 ## Acknowledgements
 
