@@ -1,9 +1,16 @@
 //! Region abstraction for drawing into rectangular regions of the display.
 
+extern crate cortex_m_semihosting;
+extern crate embedded_graphics;
+
 use command::{BufCommand, Command};
 use display::PixelCoord;
 use interface;
 use nb;
+use self::embedded_graphics::drawable::{Pixel};
+use self::embedded_graphics::coord::Coord;
+use self::embedded_graphics::prelude::*;
+use self::embedded_graphics::pixelcolor::{PixelColorU8};
 
 /// A handle to a rectangular region of a display which can be drawn into. These are intended to be
 /// short-lived, and contain a mutable borrow of the display that issued them so clashing writes
@@ -14,6 +21,7 @@ where
 {
     iface: &'di mut DI,
     top: u8,
+    left: u16,
     rows: u8,
     buf_left: u8,
     buf_cols: u8,
@@ -32,9 +40,10 @@ where
         Self {
             iface: iface,
             top: upper_left.1 as u8,
+            left: upper_left.0 as u16,
             rows: (lower_right.1 - upper_left.1) as u8,
-            buf_left: (upper_left.0 / 4) as u8,
-            buf_cols: (pixel_cols / 4) as u8,
+            buf_left: (upper_left.0 / 2) as u8,
+            buf_cols: (pixel_cols / 2) as u8,
             pixel_cols: pixel_cols as u16,
         }
     }
@@ -46,10 +55,7 @@ where
         I: Iterator<Item = u8>,
     {
         // Set the row and column address registers and put the display in write mode.
-        Command::SetColumnAddress(self.buf_left, self.buf_left + self.buf_cols - 1)
-            .send(self.iface)?;
-        Command::SetRowAddress(self.top, self.top + self.rows - 1).send(self.iface)?;
-        BufCommand::WriteImageData(&[]).send(self.iface)?;
+        // BufCommand::WriteImageData(&[]).send(self.iface)?;
 
         // Paint the region using asynchronous writes so that iter.next() may run concurrently with
         // the SPI write cycle for a small throughput win.
@@ -57,31 +63,44 @@ where
         let mut total_written = 0;
         let mut next_byte: u8;
 
+        let mut row_offset: u8 = 0;
+        let mut col_offset: u16 = 0;
+
         loop {
             // Break early if we have copied enough bytes to exactly fill the region.
             if total_written >= region_total_bytes {
                 break;
             }
 
+            // Break if overflowing rows
+            // if self.top + row_offset > self.top + self.rows {
+            //     break;
+            // }
+
+            if col_offset == 0 {
+                Command::SetRowAddress(self.top + row_offset).send(self.iface)?;
+                Command::SetLowColumnAddress(self.buf_left).send(self.iface)?;
+                Command::SetHighColumnAddress(self.buf_left).send(self.iface)?;
+            }
+
             // Break early if the iterator runs out of bytes.
             match iter.next() {
                 Some(pixels) => {
                     total_written += 1;
+
+                    col_offset += 2;
+
+                    if col_offset >= self.pixel_cols {
+                        col_offset = 0;
+                        row_offset += 1;
+                    }
+
                     next_byte = pixels;
                 }
                 None => break,
             }
 
-            // Write the byte to the interface FIFO. If the FIFO is full then poll it until the
-            // send succeeds before continuing the outer loop to consume the next byte from the
-            // iterator.
-            loop {
-                match self.iface.send_data_async(next_byte) {
-                    Ok(()) => break,
-                    Err(nb::Error::WouldBlock) => {}
-                    Err(nb::Error::Other(())) => return Err(()),
-                }
-            }
+            self.iface.send_data(&[next_byte]).unwrap();
         }
         Ok(())
     }
@@ -94,6 +113,66 @@ where
         I: Iterator<Item = u8>,
     {
         self.draw_packed(Pack8to4(iter))
+    }
+
+    /// Draw `embedded_graphics::Drawable` object.
+    pub fn draw_graphics<I>(&mut self, iter: I) -> Result<(), ()>
+    where
+        I: Iterator<Item = Pixel<PixelColorU8>>,
+    {
+        let canvas_capacity = self.rows as u16 * self.pixel_cols;
+        let mut canvas: [u8; 256*64] = [0xff; 256*64];
+
+        iter.for_each(|Pixel(UnsignedCoord(px, py), pcolor)| {
+            let color = pcolor.into_inner();
+            let x = px as u16;
+            let y = py as u16;
+            let idx = (y * self.pixel_cols + x) as usize;
+
+            if true
+                && x >= self.left
+                && x <= self.pixel_cols
+                && y >= self.top as u16
+                && y <= self.rows as u16
+                && idx < canvas_capacity as usize {
+                    if color <= 0x0F {
+                        canvas[idx] = color;
+                    }
+                }
+        });
+
+        let mut canvas_iterrator = canvas.iter();
+
+        let mut counter = 0;
+
+        while counter < canvas_capacity {
+            let p1 = canvas_iterrator.next();
+            let p2 = canvas_iterrator.next();
+
+            let byte = match (p1, p2) {
+                (Some(0xFF), Some(0xFF)) => None,
+                (Some(odd_nibble), Some(0xFF)) => Some(odd_nibble << 4),
+                (Some(odd_nibble), None)       => Some(odd_nibble << 4),
+                (Some(0xFF), Some(odd_nibble)) => Some(odd_nibble & 0x0F),
+                (Some(left_nibble), Some(right_nibble)) => Some(left_nibble << 4 | right_nibble & 0x0F),
+                _ => None,
+
+            };
+
+            if byte.is_some() {
+                let row_address = self.top + counter.div_euclid(self.pixel_cols) as u8;
+                let col_address = (self.left as u16 + counter.rem_euclid(self.pixel_cols)) / 2;
+
+                Command::SetRowAddress(row_address).send(self.iface)?;
+                Command::SetLowColumnAddress(col_address as u8).send(self.iface)?;
+                Command::SetHighColumnAddress(col_address as u8).send(self.iface)?;
+
+                self.iface.send_data(&[byte.unwrap()]).unwrap();
+            }
+
+            counter = counter + 2;
+        }
+        Ok(())
     }
 }
 

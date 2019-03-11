@@ -4,18 +4,20 @@
 //! adjacent pixels (segments) in the row for a total max resolution of 128x480. Each pixel is 4
 //! bits/16 levels of intensity, so each column also refers to two adjacent bytes. Thus, anywhere
 //! there is a "column" address, these refer to horizontal groups of 2 bytes driving 4 pixels.
+extern crate cortex_m_semihosting;
 
 use command::consts::*;
 use interface::DisplayInterface;
+use self::cortex_m_semihosting::hprintln;
 
 pub mod consts {
     //! Constants describing max supported display size and the display RAM layout.
 
     /// The maximum supported display width in pixels.
-    pub const NUM_PIXEL_COLS: u16 = 480;
+    pub const NUM_PIXEL_COLS: u16 = 256;
 
     /// The maximum supported display height in pixels.
-    pub const NUM_PIXEL_ROWS: u8 = 128;
+    pub const NUM_PIXEL_ROWS: u8 = 64;
 
     /// The number of display RAM column addresses.
     pub const NUM_BUF_COLS: u8 = (NUM_PIXEL_COLS / 4) as u8;
@@ -126,11 +128,13 @@ pub enum Command {
     /// Set the column start and end address range when writing to the display RAM. The column
     /// address pointer is reset to the start column address such that `WriteImageData` will begin
     /// writing there. Range is 0-119. (Note 1)
-    SetColumnAddress(u8, u8),
-    /// Set the row start and end address range when writing to the display RAM. The row address
+    SetColumnAddress(u8),
+    SetHighColumnAddress(u8),
+    SetLowColumnAddress(u8),
+    /// Set the row start address when writing to the display RAM. The row address
     /// pointer is reset to the start row address such that `WriteImageData` will begin writing
     /// there. Range is 0-127.
-    SetRowAddress(u8, u8),
+    SetRowAddress(u8),
     /// Set the direction of display address increment, column address remapping, data nibble
     /// remapping, COM scan direction, and COM line layout. See documentation for each enum for
     /// details.
@@ -168,16 +172,11 @@ pub enum Command {
     /// second (first pre-charge) can be set from 3-15 DCLKs. The display module datasheet should
     /// have appropriate values.
     SetPhaseLengths(u8, u8),
-    /// Set the oscillator frequency Fosc and the display clock divider. The relationship between
-    /// the frequency settings 0-15 and the actual Fosc value is not documented, except that higher
-    /// values increase the frequency. The divider DIVSET is a value n from 0-10, where DCLK is
-    /// produced by dividing Fosc by 2^n. The resulting DCLK rate indirectly determines the refresh
-    /// rate of the display (the exact rate depends on the MUX ratio and some other things).
-    SetClockFoscDivset(u8, u8),
-    /// Enable or disable display enhancements "external VSL" and "Enhanced low GS display
-    /// quality".
-    SetDisplayEnhancements(bool, bool),
+    /// Set the display clock divider.
+    /// set display clock divide ratio (lower 4 bit)/oscillator frequency (upper 4 bit)
+    SetClockDivider(u8),
     /// Set the second pre-charge period. Range 0-15 DCLKs.
+    /// pre charge (lower 4 bit) and discharge(higher 4 bit) period
     SetSecondPrechargePeriod(u8),
     /// Set the gray scale gamma table to the factory default.
     SetDefaultGrayScaleTable,
@@ -198,6 +197,16 @@ pub enum Command {
     /// Set whether the command lock is enabled or disabled. Enabling the command lock (`true`)
     /// blocks all commands except `SetCommandLock`.
     SetCommandLock(bool),
+    /// use buildin DC-DC with 0.6 * 500 kHz
+    SetDCDCSetting(u8),
+    /// discharge level
+    SetDischargeLevel(u8),
+    /// remap segments
+    SetSegmentRemap(u8),
+    /// scan direction
+    SetScanDirection(u8),
+    /// multiplex ratio 1/64 Duty (0x0F~0x3F)
+    SetMultiplexRatio(u8),
 }
 
 /// Enumerates commands that can be sent to the SSD1322 which accept a slice argument buffer. This
@@ -240,14 +249,38 @@ impl Command {
         let mut arg_buf = [0u8; 2];
         let (cmd, data) = match self {
             Command::EnableGrayScaleTable => ok_command!(arg_buf, 0x00, []),
-            Command::SetColumnAddress(start, end) => match (start, end) {
-                (0...BUF_COL_MAX, 0...BUF_COL_MAX) => ok_command!(arg_buf, 0x15, [start, end]),
+            Command::SetColumnAddress(address) => match address {
+                0...BUF_COL_MAX => ok_command!(arg_buf, 0x10 | (address >> 4), [0x00 | (address & 0x0F)]),
                 _ => Err(()),
             },
-            Command::SetRowAddress(start, end) => match (start, end) {
-                (0...PIXEL_ROW_MAX, 0...PIXEL_ROW_MAX) => ok_command!(arg_buf, 0x75, [start, end]),
+            Command::SetHighColumnAddress(address) => match address {
+                0...0x7F => ok_command!(arg_buf, 0x10 + (address >> 4), []),
                 _ => Err(()),
             },
+            Command::SetLowColumnAddress(address) => match address {
+                0...0x7F => ok_command!(arg_buf, 0x00 + (address & 0x0F), []),
+                _ => Err(()),
+            },
+            Command::SetRowAddress(address) => match address {
+                0...0xFF => ok_command!(arg_buf, 0xB0, [address]),
+                _ => Err(()),
+            },
+            Command::SetSegmentRemap(remap) => match remap {
+                0...0x03 => ok_command!(arg_buf, 0xA0 | remap, []),
+                _ => Err(()),
+            }
+            Command::SetScanDirection(direction) => match direction {
+                0...0x8 => ok_command!(arg_buf, 0xC0 | direction, []),
+                _ => Err(()),
+            }
+            Command::SetMultiplexRatio(ratio) => match ratio {
+                0x0F...0x3F => ok_command!(arg_buf, 0xA8, [ratio]),
+                _ => Err(()),
+            }
+            Command::SetDCDCSetting(ratio) => match ratio {
+                0x00...0xFF => ok_command!(arg_buf, 0xAD, [ratio]),
+                _ => Err(()),
+            }
             Command::SetRemapping(
                 increment_axis,
                 column_remap,
@@ -276,14 +309,14 @@ impl Command {
                     ComLayout::Interlaced => (0x20, 0x01),
                     ComLayout::DualProgressive => (0x00, 0x11),
                 };
-                ok_command!(arg_buf, 0xA0, [ia | cr | nr | csd | interlace, dual_com])
+                ok_command!(arg_buf, 0xA0 | (ia | cr | nr | csd | interlace), [])
             }
             Command::SetStartLine(line) => match line {
-                0...PIXEL_ROW_MAX => ok_command!(arg_buf, 0xA1, [line]),
+                0...PIXEL_ROW_MAX => ok_command!(arg_buf, 0x40 | line, []),
                 _ => Err(()),
             },
             Command::SetDisplayOffset(line) => match line {
-                0...PIXEL_ROW_MAX => ok_command!(arg_buf, 0xA2, [line]),
+                0...PIXEL_ROW_MAX => ok_command!(arg_buf, 0xD3, [line]),
                 _ => Err(()),
             },
             Command::SetDisplayMode(mode) => ok_command!(
@@ -319,35 +352,28 @@ impl Command {
                 }
                 _ => Err(()),
             },
-            Command::SetClockFoscDivset(fosc, divset) => match (fosc, divset) {
-                (0...15, 0...10) => ok_command!(arg_buf, 0xB3, [fosc << 4 | divset]),
+            Command::SetDischargeLevel(level) => match level {
+                0...0x0F => ok_command!(arg_buf, 0x30 | level, []),
                 _ => Err(()),
             },
-            Command::SetDisplayEnhancements(ena_external_vsl, ena_enahnced_low_gs_quality) => {
-                let vsl = match ena_external_vsl {
-                    true => 0xA0,
-                    false => 0xA2,
-                };
-                let gs = match ena_enahnced_low_gs_quality {
-                    true => 0xFD,
-                    false => 0xB5,
-                };
-                ok_command!(arg_buf, 0xB4, [vsl, gs])
-            }
+            Command::SetClockDivider(divider) => match divider {
+                0...0xFF => ok_command!(arg_buf, 0xD5, [divider]),
+                _ => Err(()),
+            },
             Command::SetSecondPrechargePeriod(period) => match period {
-                0...15 => ok_command!(arg_buf, 0xB6, [period]),
+                0...0x22 => ok_command!(arg_buf, 0xD9, [period]),
                 _ => Err(()),
             },
             Command::SetDefaultGrayScaleTable => ok_command!(arg_buf, 0xB9, []),
             Command::SetPreChargeVoltage(voltage) => match voltage {
-                0...31 => ok_command!(arg_buf, 0xBB, [voltage]),
-                _ => Err(()),
+                0...0x50 => ok_command!(arg_buf, 0xDC, [voltage]),
+                _ => Err(())
             },
             Command::SetComDeselectVoltage(voltage) => match voltage {
-                0...7 => ok_command!(arg_buf, 0xBE, [voltage]),
+                0...0x50 => ok_command!(arg_buf, 0xDB, [voltage]),
                 _ => Err(()),
             },
-            Command::SetContrastCurrent(current) => ok_command!(arg_buf, 0xC1, [current]),
+            Command::SetContrastCurrent(current) => ok_command!(arg_buf, 0x81, [current]),
             Command::SetMasterContrast(contrast) => match contrast {
                 0...15 => ok_command!(arg_buf, 0xC7, [contrast]),
                 _ => Err(()),
@@ -368,7 +394,7 @@ impl Command {
         if data.len() == 0 {
             Ok(())
         } else {
-            iface.send_data(data)
+            iface.send_command(data[0])
         }
     }
 }
@@ -397,9 +423,11 @@ impl<'a> BufCommand<'a> {
                     Err(())
                 }
             }
-            BufCommand::WriteImageData(buf) => Ok((0x5C, buf)),
+            BufCommand::WriteImageData(buf) => Ok((0x00, buf)),
         }?;
-        iface.send_command(cmd)?;
+        if cmd != 0x00 {
+            iface.send_command(cmd)?;
+        }
         if data.len() == 0 {
             Ok(())
         } else {
@@ -417,19 +445,17 @@ mod tests {
     #[test]
     fn set_column_address() {
         let mut di = TestSpyInterface::new();
-        Command::SetColumnAddress(23, 42).send(&mut di).unwrap();
-        di.check(0x15, &[23, 42]);
-        assert_eq!(Command::SetColumnAddress(120, 42).send(&mut di), Err(()));
-        assert_eq!(Command::SetColumnAddress(23, 255).send(&mut di), Err(()));
+        Command::SetColumnAddress(23).send(&mut di).unwrap();
+        di.check(17, &[7]);
+        assert_eq!(Command::SetColumnAddress(120).send(&mut di), Err(()));
     }
 
     #[test]
     fn set_row_address() {
         let mut di = TestSpyInterface::new();
-        Command::SetRowAddress(23, 42).send(&mut di).unwrap();
-        di.check(0x75, &[23, 42]);
-        assert_eq!(Command::SetRowAddress(128, 42).send(&mut di), Err(()));
-        assert_eq!(Command::SetRowAddress(23, 255).send(&mut di), Err(()));
+        Command::SetRowAddress(23).send(&mut di).unwrap();
+        di.check(0x75, &[23]);
+        assert_eq!(Command::SetRowAddress(23).send(&mut di), Err(()));
     }
 
     #[test]
@@ -568,34 +594,11 @@ mod tests {
     }
 
     #[test]
-    fn set_clock_fosc_divset() {
+    fn set_clock_divider() {
         let mut di = TestSpyInterface::new();
-        Command::SetClockFoscDivset(0, 0).send(&mut di).unwrap();
-        di.check(0xB3, &[0x00]);
-        di.clear();
-        Command::SetClockFoscDivset(15, 10).send(&mut di).unwrap();
-        di.check(0xB3, &[0xFA]);
-        assert_eq!(Command::SetClockFoscDivset(0, 11).send(&mut di), Err(()));
-        assert_eq!(Command::SetClockFoscDivset(16, 0).send(&mut di), Err(()));
-    }
-
-    #[test]
-    fn set_display_enhancements() {
-        let mut di = TestSpyInterface::new();
-        Command::SetDisplayEnhancements(false, false)
-            .send(&mut di)
-            .unwrap();
-        di.check(0xB4, &[0b10100010, 0b10110101]);
-        di.clear();
-        Command::SetDisplayEnhancements(true, false)
-            .send(&mut di)
-            .unwrap();
-        di.check(0xB4, &[0b10100000, 0b10110101]);
-        di.clear();
-        Command::SetDisplayEnhancements(true, true)
-            .send(&mut di)
-            .unwrap();
-        di.check(0xB4, &[0b10100000, 0b11111101]);
+        Command::SetClockDivider(0).send(&mut di).unwrap();
+        di.check(0xD5, &[0x00]);
+        assert_eq!(Command::SetClockDivider(11).send(&mut di), Err(()));
     }
 
     #[test]

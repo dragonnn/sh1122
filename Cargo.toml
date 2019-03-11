@@ -1,25 +1,27 @@
 [package]
-name = "ssd1322"
-description = "SPI driver for the SSD1322 OLED display controller"
-version = "0.2.2"
-authors = ["Kyle Schaffrick <kyle@raidi.us>"]
-keywords = ["no-std", "ssd1322", "oled", "embedded", "embedded-hal-driver"]
-repository = "https://github.com/edarc/ssd1322"
+name = "sh1122"
+description = "SPI driver for the SH1122 OLED display controller"
+version = "0.1.0"
+authors = ["Max Vasiliev <max@vasiliev.me>"]
+keywords = ["no-std", "sh1122", "oled", "embedded", "embedded-hal-driver"]
+repository = "https://github.com/skammer/sh1122"
 readme = "README.md"
 license = "MIT OR Apache-2.0"
 exclude = [
 	".gitignore",
-	"ferris-on-nhd.jpg",
+	"demo.jpg",
 ]
 
 [dependencies]
 embedded-hal = "0.2"
 nb = "0.1"
+cortex-m-semihosting = "0.3.2"
+embedded-graphics = "0.4.7"
 
 [dependencies.itertools]
 version = "0.7"
 default-features = false
 
 [features]
-default = ["std"]
+default = []
 std = []

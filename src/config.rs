@@ -42,8 +42,7 @@ pub struct Config {
     pub(crate) persistent_config: PersistentConfig,
     contrast_current_cmd: Option<Command>,
     phase_lengths_cmd: Option<Command>,
-    clock_fosc_divset_cmd: Option<Command>,
-    display_enhancements_cmd: Option<Command>,
+    clock_divider_cmd: Option<Command>,
     second_precharge_period_cmd: Option<Command>,
     precharge_voltage_cmd: Option<Command>,
     com_deselect_voltage_cmd: Option<Command>,
@@ -62,8 +61,7 @@ impl Config {
             },
             contrast_current_cmd: None,
             phase_lengths_cmd: None,
-            clock_fosc_divset_cmd: None,
-            display_enhancements_cmd: None,
+            clock_divider_cmd: None,
             second_precharge_period_cmd: None,
             precharge_voltage_cmd: None,
             com_deselect_voltage_cmd: None,
@@ -88,23 +86,11 @@ impl Config {
         }
     }
 
-    /// Extend this `Config` to explicitly configure the display clock frequency and divider. See
-    /// `Command::SetClockFoscDivset`.
-    pub fn clock_fosc_divset(self, fosc: u8, divset: u8) -> Self {
+    /// Extend this `Config` to explicitly configure the display clock divider. See
+    /// `Command::SetClockDivider`.
+    pub fn clock_divider(self, divider: u8) -> Self {
         Self {
-            clock_fosc_divset_cmd: Some(Command::SetClockFoscDivset(fosc, divset)),
-            ..self
-        }
-    }
-
-    /// Extend this `Config` to explicitly configure display enhancement features. See
-    /// `Command::SetDisplayEnhancements`.
-    pub fn display_enhancements(self, external_vsl: bool, enhanced_low_gs_quality: bool) -> Self {
-        Self {
-            display_enhancements_cmd: Some(Command::SetDisplayEnhancements(
-                external_vsl,
-                enhanced_low_gs_quality,
-            )),
+            clock_divider_cmd: Some(Command::SetClockDivider(divider)),
             ..self
         }
     }
@@ -142,18 +128,17 @@ impl Config {
     where
         DI: interface::DisplayInterface,
     {
-        self.phase_lengths_cmd.map_or(Ok(()), |c| c.send(iface))?;
-        self.contrast_current_cmd
-            .map_or(Ok(()), |c| c.send(iface))?;
-        self.clock_fosc_divset_cmd
-            .map_or(Ok(()), |c| c.send(iface))?;
-        self.display_enhancements_cmd
+        self.clock_divider_cmd
             .map_or(Ok(()), |c| c.send(iface))?;
         self.second_precharge_period_cmd
+            .map_or(Ok(()), |c| c.send(iface))?;
+        self.contrast_current_cmd
             .map_or(Ok(()), |c| c.send(iface))?;
         self.precharge_voltage_cmd
             .map_or(Ok(()), |c| c.send(iface))?;
         self.com_deselect_voltage_cmd
             .map_or(Ok(()), |c| c.send(iface))
+        //
+        // self.phase_lengths_cmd.map_or(Ok(()), |c| c.send(iface))?;
     }
 }

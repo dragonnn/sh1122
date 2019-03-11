@@ -16,6 +16,7 @@ pub mod testing {
 
 pub mod overscanned_region;
 pub mod region;
+extern crate cortex_m_semihosting;
 
 use command::consts::*;
 use command::*;
@@ -23,6 +24,7 @@ use config::{Config, PersistentConfig};
 use display::overscanned_region::OverscannedRegion;
 use display::region::Region;
 use interface;
+use self::cortex_m_semihosting::hprintln;
 
 /// A pixel coordinate pair of `column` and `row`. `column` must be in the range [0,
 /// `consts::PIXEL_COL_MAX`], and `row` must be in the range [0, `consts::PIXEL_ROW_MAX`].
@@ -62,8 +64,8 @@ where
             || display_size.1 > NUM_PIXEL_ROWS as i16
             || display_offset.0 + display_size.0 > NUM_PIXEL_COLS as i16
             || display_offset.1 + display_size.1 > NUM_PIXEL_ROWS as i16
-            || display_size.0.rem_euclid(4) != 0
-            || display_offset.0.rem_euclid(4) != 0
+            || display_size.0.rem_euclid(2) != 0
+            || display_offset.0.rem_euclid(2) != 0
         {
             panic!("Display size or column offset not supported by SSD1322.");
         }
@@ -78,20 +80,21 @@ where
     /// Initialize the display with a config message.
     pub fn init(&mut self, config: Config) -> Result<(), ()> {
         self.sleep(true)?;
-        Command::SetDisplayMode(DisplayMode::BlankDark).send(&mut self.iface)?;
-        config.send(&mut self.iface)?;
-        self.persistent_config = Some(config.persistent_config);
-        Command::SetMuxRatio(self.display_size.1 as u8).send(&mut self.iface)?;
-        Command::SetDisplayOffset(self.display_offset.1 as u8).send(&mut self.iface)?;
         Command::SetStartLine(0).send(&mut self.iface)?;
-        self.persistent_config.as_ref().unwrap().send(
-            &mut self.iface,
-            IncrementAxis::Horizontal,
-            ColumnRemap::Forward,
-            NibbleRemap::Forward,
-        )?;
-        self.sleep(false)?;
-        Command::SetDisplayMode(DisplayMode::Normal).send(&mut self.iface)
+
+        Command::SetSegmentRemap(0x0).send(&mut self.iface)?;
+
+        Command::SetScanDirection(0x0).send(&mut self.iface)?;
+        Command::SetContrastCurrent(0x80).send(&mut self.iface)?;
+        Command::SetMultiplexRatio(0x3F).send(&mut self.iface)?;
+        Command::SetDCDCSetting(0x81).send(&mut self.iface)?;
+        Command::SetClockDivider(0x50).send(&mut self.iface)?;
+        Command::SetDisplayOffset(0x00).send(&mut self.iface)?;
+        Command::SetSecondPrechargePeriod(0x22).send(&mut self.iface)?;
+        Command::SetComDeselectVoltage(0x35).send(&mut self.iface)?;
+        Command::SetPreChargeVoltage(0x35).send(&mut self.iface)?;
+        Command::SetDischargeLevel(0x0).send(&mut self.iface)?;
+        self.sleep(false)
     }
 
     /// Control sleep mode.
@@ -120,8 +123,8 @@ where
 
     /// Construct a rectangular region onto which to draw image data.
     ///
-    /// The region start and end horizontal coordinates must be divisible by 4, because pixels can
-    /// only be addressed by column address (groups of 4), not individually. The region rectangle
+    /// The region start and end horizontal coordinates must be divisible by 2, because pixels can
+    /// only be addressed by column address (groups of 2), not individually. The region rectangle
     /// must also be within the viewable area of the display buffer, where the viewable area
     /// includes all 128 rows to support vertical panning.
     ///
@@ -150,9 +153,10 @@ where
             || lower_right.1 > NUM_PIXEL_ROWS as i16
             || upper_left.0 >= lower_right.0
             || upper_left.1 >= lower_right.1
-            || upper_left.0.rem_euclid(4) != 0
-            || lower_right.0.rem_euclid(4) != 0
+            || upper_left.0.rem_euclid(2) != 0
+            || lower_right.0.rem_euclid(2) != 0
         {
+            hprintln!("Failed to initialize a region, something is up with pixel coords").unwrap();
             return Err(());
         }
 
@@ -167,7 +171,7 @@ where
     /// overscan.
     ///
     /// The region start and end horizontal coordinates must be divisible by 4, because pixels can
-    /// only be addressed by column (groups of 4), not individually. An overscanned region
+    /// only be addressed by column (groups of 2), not individually. An overscanned region
     /// rectangle *need not* lie within the viewable area of the display buffer, as it will
     /// automatically crop non-viewable pixels to alleviate its user from worrying about boundary
     /// conditions.
@@ -182,8 +186,8 @@ where
         if false
             || upper_left.0 >= lower_right.0
             || upper_left.1 >= lower_right.1
-            || upper_left.0.rem_euclid(4) != 0
-            || lower_right.0.rem_euclid(4) != 0
+            || upper_left.0.rem_euclid(2) != 0
+            || lower_right.0.rem_euclid(2) != 0
         {
             return Err(());
         }
