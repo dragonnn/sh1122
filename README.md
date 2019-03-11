@@ -23,9 +23,9 @@ Includes rudimentary support for [embedded-graphics](https://github.com/jamwaffl
 ## Acknowledgements
 
 [edarc/ssd1322](https://github.com/edarc/ssd1322) for the SSD1322 driver
-I forked to make this one.
+I forked to make this one.  
 [jamwaffles/ssd1306](https://github.com/jamwaffles/ssd1306) for internal design
-inspiration.
+inspiration.  
 [japaric/embedded-hal](https://github.com/japaric/embedded-hal) for making
 dealing with embedded hardware easy, safe, and enjoyable.
 
