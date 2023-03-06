@@ -3,10 +3,11 @@
 //! overscanned regions is silently discarded, to relieve the user from having to consider boundary
 //! conditions in code where the region rectangle is dynamically computed.
 
-use command::consts::*;
-use display::region::{Pack8to4, Region};
-use display::PixelCoord;
-use display_interface::{DataFormat::U8, DisplayError, WriteOnlyDataCommand};
+use display_interface::WriteOnlyDataCommand;
+
+use crate::{consts::NUM_PIXEL_ROWS, PixelCoord};
+
+use super::region::{Pack8to4, Region};
 
 /// A handle to a rectangular region which can be drawn into, but which is permitted to have
 /// portions that lie outside the viewable area of the display. Pixels that fall outside the

@@ -8,6 +8,7 @@ repository = "https://github.com/skammer/sh1122"
 readme = "README.md"
 license = "MIT OR Apache-2.0"
 exclude = [".gitignore", "demo.jpg"]
+edition = "2021"
 
 [dependencies]
 embedded-hal = "0.2"

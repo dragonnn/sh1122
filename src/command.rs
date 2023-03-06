@@ -5,9 +5,8 @@
 //! bits/16 levels of intensity, so each column also refers to two adjacent bytes. Thus, anywhere
 //! there is a "column" address, these refer to horizontal groups of 2 bytes driving 4 pixels.
 
-use command::consts::*;
-use display_interface::{DataFormat::U8, DisplayError, WriteOnlyDataCommand};
-use interface::DisplayInterface;
+use self::consts::*;
+use display_interface::{DataFormat::U8, WriteOnlyDataCommand};
 
 pub mod consts {
     //! Constants describing max supported display size and the display RAM layout.
@@ -249,37 +248,37 @@ impl Command {
         let (cmd, data) = match self {
             Command::EnableGrayScaleTable => ok_command!(arg_buf, 0x00, []),
             Command::SetColumnAddress(address) => match address {
-                0...BUF_COL_MAX => {
+                0..=BUF_COL_MAX => {
                     ok_command!(arg_buf, 0x10 | (address >> 4), [0x00 | (address & 0x0F)])
                 }
                 _ => Err(()),
             },
             Command::SetHighColumnAddress(address) => match address {
-                0...0x7F => ok_command!(arg_buf, 0x10 + (address >> 4), []),
+                0..=0x7F => ok_command!(arg_buf, 0x10 + (address >> 4), []),
                 _ => Err(()),
             },
             Command::SetLowColumnAddress(address) => match address {
-                0...0x7F => ok_command!(arg_buf, 0x00 + (address & 0x0F), []),
+                0..=0x7F => ok_command!(arg_buf, 0x00 + (address & 0x0F), []),
                 _ => Err(()),
             },
             Command::SetRowAddress(address) => match address {
-                0...0xFF => ok_command!(arg_buf, 0xB0, [address]),
+                0..=0xFF => ok_command!(arg_buf, 0xB0, [address]),
                 _ => Err(()),
             },
             Command::SetSegmentRemap(remap) => match remap {
-                0...0x03 => ok_command!(arg_buf, 0xA0 | remap, []),
+                0..=0x03 => ok_command!(arg_buf, 0xA0 | remap, []),
                 _ => Err(()),
             },
             Command::SetScanDirection(direction) => match direction {
-                0...0x8 => ok_command!(arg_buf, 0xC0 | direction, []),
+                0..=0x8 => ok_command!(arg_buf, 0xC0 | direction, []),
                 _ => Err(()),
             },
             Command::SetMultiplexRatio(ratio) => match ratio {
-                0x0F...0x3F => ok_command!(arg_buf, 0xA8, [ratio]),
+                0x0F..=0x3F => ok_command!(arg_buf, 0xA8, [ratio]),
                 _ => Err(()),
             },
             Command::SetDCDCSetting(ratio) => match ratio {
-                0x00...0xFF => ok_command!(arg_buf, 0xAD, [ratio]),
+                0x00..=0xFF => ok_command!(arg_buf, 0xAD, [ratio]),
                 _ => Err(()),
             },
             Command::SetRemapping(
@@ -313,11 +312,11 @@ impl Command {
                 ok_command!(arg_buf, 0xA0 | (ia | cr | nr | csd | interlace), [])
             }
             Command::SetStartLine(line) => match line {
-                0...PIXEL_ROW_MAX => ok_command!(arg_buf, 0x40 | line, []),
+                0..=PIXEL_ROW_MAX => ok_command!(arg_buf, 0x40 | line, []),
                 _ => Err(()),
             },
             Command::SetDisplayOffset(line) => match line {
-                0...PIXEL_ROW_MAX => ok_command!(arg_buf, 0xD3, [line]),
+                0..=PIXEL_ROW_MAX => ok_command!(arg_buf, 0xD3, [line]),
                 _ => Err(()),
             },
             Command::SetDisplayMode(mode) => ok_command!(
@@ -331,7 +330,7 @@ impl Command {
                 []
             ),
             Command::EnablePartialDisplay(start, end) => match (start, end) {
-                (0...PIXEL_ROW_MAX, 0...PIXEL_ROW_MAX) if start <= end => {
+                (0..=PIXEL_ROW_MAX, 0..=PIXEL_ROW_MAX) if start <= end => {
                     ok_command!(arg_buf, 0xA8, [start, end])
                 }
                 _ => Err(()),
@@ -346,7 +345,7 @@ impl Command {
                 []
             ),
             Command::SetPhaseLengths(phase_1, phase_2) => match (phase_1, phase_2) {
-                (5...31, 3...15) => {
+                (5..=31, 3..=15) => {
                     let p1 = (phase_1 - 1) >> 1;
                     let p2 = 0xF0 & (phase_2 << 4);
                     ok_command!(arg_buf, 0xB1, [p1 | p2])
@@ -354,33 +353,33 @@ impl Command {
                 _ => Err(()),
             },
             Command::SetDischargeLevel(level) => match level {
-                0...0x0F => ok_command!(arg_buf, 0x30 | level, []),
+                0..=0x0F => ok_command!(arg_buf, 0x30 | level, []),
                 _ => Err(()),
             },
             Command::SetClockDivider(divider) => match divider {
-                0...0xFF => ok_command!(arg_buf, 0xD5, [divider]),
+                0..=0xFF => ok_command!(arg_buf, 0xD5, [divider]),
                 _ => Err(()),
             },
             Command::SetSecondPrechargePeriod(period) => match period {
-                0...0x22 => ok_command!(arg_buf, 0xD9, [period]),
+                0..=0x22 => ok_command!(arg_buf, 0xD9, [period]),
                 _ => Err(()),
             },
             Command::SetDefaultGrayScaleTable => ok_command!(arg_buf, 0xB9, []),
             Command::SetPreChargeVoltage(voltage) => match voltage {
-                0...0x50 => ok_command!(arg_buf, 0xDC, [voltage]),
+                0..=0x50 => ok_command!(arg_buf, 0xDC, [voltage]),
                 _ => Err(()),
             },
             Command::SetComDeselectVoltage(voltage) => match voltage {
-                0...0x50 => ok_command!(arg_buf, 0xDB, [voltage]),
+                0..=0x50 => ok_command!(arg_buf, 0xDB, [voltage]),
                 _ => Err(()),
             },
             Command::SetContrastCurrent(current) => ok_command!(arg_buf, 0x81, [current]),
             Command::SetMasterContrast(contrast) => match contrast {
-                0...15 => ok_command!(arg_buf, 0xC7, [contrast]),
+                0..=15 => ok_command!(arg_buf, 0xC7, [contrast]),
                 _ => Err(()),
             },
             Command::SetMuxRatio(ratio) => match ratio {
-                16...NUM_PIXEL_ROWS => ok_command!(arg_buf, 0xCA, [ratio - 1]),
+                16..=NUM_PIXEL_ROWS => ok_command!(arg_buf, 0xCA, [ratio - 1]),
                 _ => Err(()),
             },
             Command::SetCommandLock(ena) => {

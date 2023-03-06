@@ -1,14 +1,12 @@
 //! Region abstraction for drawing into rectangular regions of the display.
 
-use command::{BufCommand, Command};
-use display::PixelCoord;
-use embedded_graphics::pixelcolor::{Gray4, Gray8};
-use interface;
-use nb;
+use embedded_graphics::pixelcolor::Gray8;
 //use self::embedded_graphics::drawable::{Pixel};
 //use self::embedded_graphics::coord::Coord;
-use display_interface::{DataFormat::U8, DisplayError, WriteOnlyDataCommand};
+use display_interface::{DataFormat::U8, WriteOnlyDataCommand};
 use embedded_graphics::prelude::*;
+
+use crate::{command::Command, PixelCoord};
 //use self::embedded_graphics::pixelcolor::{PixelColorU8};
 
 /// A handle to a rectangular region of a display which can be drawn into. These are intended to be
