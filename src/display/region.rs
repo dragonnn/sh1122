@@ -1,23 +1,22 @@
 //! Region abstraction for drawing into rectangular regions of the display.
 
-extern crate cortex_m_semihosting;
-extern crate embedded_graphics;
-
 use command::{BufCommand, Command};
 use display::PixelCoord;
+use embedded_graphics::pixelcolor::{Gray4, Gray8};
 use interface;
 use nb;
-use self::embedded_graphics::drawable::{Pixel};
-use self::embedded_graphics::coord::Coord;
-use self::embedded_graphics::prelude::*;
-use self::embedded_graphics::pixelcolor::{PixelColorU8};
+//use self::embedded_graphics::drawable::{Pixel};
+//use self::embedded_graphics::coord::Coord;
+use display_interface::{DataFormat::U8, DisplayError, WriteOnlyDataCommand};
+use embedded_graphics::prelude::*;
+//use self::embedded_graphics::pixelcolor::{PixelColorU8};
 
 /// A handle to a rectangular region of a display which can be drawn into. These are intended to be
 /// short-lived, and contain a mutable borrow of the display that issued them so clashing writes
 /// are prevented.
 pub struct Region<'di, DI>
 where
-    DI: 'di + interface::DisplayInterface,
+    DI: 'di + WriteOnlyDataCommand,
 {
     iface: &'di mut DI,
     top: u8,
@@ -30,7 +29,7 @@ where
 
 impl<'di, DI> Region<'di, DI>
 where
-    DI: 'di + interface::DisplayInterface,
+    DI: 'di + WriteOnlyDataCommand,
 {
     /// Construct a new region. This is only called by the factory method `Display::region`, which
     /// checks that the region coordinates are within the viewable area and correctly ordered, and
@@ -100,7 +99,7 @@ where
                 None => break,
             }
 
-            self.iface.send_data(&[next_byte]).unwrap();
+            self.iface.send_data(U8(&[next_byte])).unwrap();
         }
         Ok(())
     }
@@ -118,15 +117,15 @@ where
     /// Draw `embedded_graphics::Drawable` object.
     pub fn draw_graphics<I>(&mut self, iter: I) -> Result<(), ()>
     where
-        I: Iterator<Item = Pixel<PixelColorU8>>,
+        I: Iterator<Item = Pixel<Gray8>>,
     {
         let canvas_capacity = self.rows as u16 * self.pixel_cols;
-        let mut canvas: [u8; 256*64] = [0xff; 256*64];
+        let mut canvas: [u8; 256 * 64] = [0xff; 256 * 64];
 
-        iter.for_each(|Pixel(UnsignedCoord(px, py), pcolor)| {
-            let color = pcolor.into_inner();
-            let x = px as u16;
-            let y = py as u16;
+        iter.for_each(|Pixel(Point { x, y }, pcolor)| {
+            let color: u8 = pcolor.into_storage();
+            let x = x as u16;
+            let y = y as u16;
             let idx = (y * self.pixel_cols + x) as usize;
 
             if true
@@ -134,11 +133,14 @@ where
                 && x <= self.pixel_cols
                 && y >= self.top as u16
                 && y <= self.rows as u16
-                && idx < canvas_capacity as usize {
-                    if color <= 0x0F {
-                        canvas[idx] = color;
-                    }
+                && idx < canvas_capacity as usize
+            {
+                if color <= 0x0F {
+                    canvas[idx] = color;
+                } else {
+                    canvas[idx] = 0x0F;
                 }
+            }
         });
 
         let mut canvas_iterrator = canvas.iter();
@@ -152,11 +154,12 @@ where
             let byte = match (p1, p2) {
                 (Some(0xFF), Some(0xFF)) => None,
                 (Some(odd_nibble), Some(0xFF)) => Some(odd_nibble << 4),
-                (Some(odd_nibble), None)       => Some(odd_nibble << 4),
+                (Some(odd_nibble), None) => Some(odd_nibble << 4),
                 (Some(0xFF), Some(odd_nibble)) => Some(odd_nibble & 0x0F),
-                (Some(left_nibble), Some(right_nibble)) => Some(left_nibble << 4 | right_nibble & 0x0F),
+                (Some(left_nibble), Some(right_nibble)) => {
+                    Some(left_nibble << 4 | right_nibble & 0x0F)
+                }
                 _ => None,
-
             };
 
             if byte.is_some() {
@@ -167,7 +170,7 @@ where
                 Command::SetLowColumnAddress(col_address as u8).send(self.iface)?;
                 Command::SetHighColumnAddress(col_address as u8).send(self.iface)?;
 
-                self.iface.send_data(&[byte.unwrap()]).unwrap();
+                self.iface.send_data(U8(&[byte.unwrap()])).unwrap();
             }
 
             counter = counter + 2;

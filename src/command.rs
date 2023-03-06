@@ -4,11 +4,10 @@
 //! adjacent pixels (segments) in the row for a total max resolution of 128x480. Each pixel is 4
 //! bits/16 levels of intensity, so each column also refers to two adjacent bytes. Thus, anywhere
 //! there is a "column" address, these refer to horizontal groups of 2 bytes driving 4 pixels.
-extern crate cortex_m_semihosting;
 
 use command::consts::*;
+use display_interface::{DataFormat::U8, DisplayError, WriteOnlyDataCommand};
 use interface::DisplayInterface;
-use self::cortex_m_semihosting::hprintln;
 
 pub mod consts {
     //! Constants describing max supported display size and the display RAM layout.
@@ -244,13 +243,15 @@ impl Command {
     /// Transmit the command encoded by `self` to the display on interface `iface`.
     pub fn send<DI>(self, iface: &mut DI) -> Result<(), ()>
     where
-        DI: DisplayInterface,
+        DI: WriteOnlyDataCommand,
     {
         let mut arg_buf = [0u8; 2];
         let (cmd, data) = match self {
             Command::EnableGrayScaleTable => ok_command!(arg_buf, 0x00, []),
             Command::SetColumnAddress(address) => match address {
-                0...BUF_COL_MAX => ok_command!(arg_buf, 0x10 | (address >> 4), [0x00 | (address & 0x0F)]),
+                0...BUF_COL_MAX => {
+                    ok_command!(arg_buf, 0x10 | (address >> 4), [0x00 | (address & 0x0F)])
+                }
                 _ => Err(()),
             },
             Command::SetHighColumnAddress(address) => match address {
@@ -268,19 +269,19 @@ impl Command {
             Command::SetSegmentRemap(remap) => match remap {
                 0...0x03 => ok_command!(arg_buf, 0xA0 | remap, []),
                 _ => Err(()),
-            }
+            },
             Command::SetScanDirection(direction) => match direction {
                 0...0x8 => ok_command!(arg_buf, 0xC0 | direction, []),
                 _ => Err(()),
-            }
+            },
             Command::SetMultiplexRatio(ratio) => match ratio {
                 0x0F...0x3F => ok_command!(arg_buf, 0xA8, [ratio]),
                 _ => Err(()),
-            }
+            },
             Command::SetDCDCSetting(ratio) => match ratio {
                 0x00...0xFF => ok_command!(arg_buf, 0xAD, [ratio]),
                 _ => Err(()),
-            }
+            },
             Command::SetRemapping(
                 increment_axis,
                 column_remap,
@@ -367,7 +368,7 @@ impl Command {
             Command::SetDefaultGrayScaleTable => ok_command!(arg_buf, 0xB9, []),
             Command::SetPreChargeVoltage(voltage) => match voltage {
                 0...0x50 => ok_command!(arg_buf, 0xDC, [voltage]),
-                _ => Err(())
+                _ => Err(()),
             },
             Command::SetComDeselectVoltage(voltage) => match voltage {
                 0...0x50 => ok_command!(arg_buf, 0xDB, [voltage]),
@@ -390,12 +391,13 @@ impl Command {
                 ok_command!(arg_buf, 0xFD, [e])
             }
         }?;
-        iface.send_command(cmd)?;
+
         if data.len() == 0 {
-            Ok(())
+            iface.send_commands(U8(&[cmd])).unwrap();
         } else {
-            iface.send_command(data[0])
+            iface.send_commands(U8(&[cmd, data[0]])).unwrap();
         }
+        Ok(())
     }
 }
 
@@ -403,7 +405,7 @@ impl<'a> BufCommand<'a> {
     /// Transmit the command encoded by `self` to the display on interface `iface`.
     pub fn send<DI>(self, iface: &mut DI) -> Result<(), ()>
     where
-        DI: DisplayInterface,
+        DI: WriteOnlyDataCommand,
     {
         let (cmd, data) = match self {
             BufCommand::SetGrayScaleTable(table) => {
@@ -426,13 +428,12 @@ impl<'a> BufCommand<'a> {
             BufCommand::WriteImageData(buf) => Ok((0x00, buf)),
         }?;
         if cmd != 0x00 {
-            iface.send_command(cmd)?;
+            iface.send_commands(U8(&[cmd])).unwrap();
         }
-        if data.len() == 0 {
-            Ok(())
-        } else {
-            iface.send_data(data)
+        if data.len() != 0 {
+            iface.send_data(U8(&data)).unwrap();
         }
+        Ok(())
     }
 }
 

@@ -7,19 +7,16 @@ keywords = ["no-std", "sh1122", "oled", "embedded", "embedded-hal-driver"]
 repository = "https://github.com/skammer/sh1122"
 readme = "README.md"
 license = "MIT OR Apache-2.0"
-exclude = [
-	".gitignore",
-	"demo.jpg",
-]
+exclude = [".gitignore", "demo.jpg"]
 
 [dependencies]
 embedded-hal = "0.2"
-nb = "0.1"
-cortex-m-semihosting = "0.3.2"
-embedded-graphics = "0.4.7"
+nb = "1.0.0"
+embedded-graphics = "0.7.1"
+display-interface = "0.4.0"
 
 [dependencies.itertools]
-version = "0.7"
+version = "0.10.5"
 default-features = false
 
 [features]

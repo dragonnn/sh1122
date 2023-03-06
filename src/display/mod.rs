@@ -16,15 +16,13 @@ pub mod testing {
 
 pub mod overscanned_region;
 pub mod region;
-extern crate cortex_m_semihosting;
 
 use command::consts::*;
 use command::*;
 use config::{Config, PersistentConfig};
 use display::overscanned_region::OverscannedRegion;
 use display::region::Region;
-use interface;
-use self::cortex_m_semihosting::hprintln;
+use display_interface::{DataFormat::U8, DisplayError, WriteOnlyDataCommand};
 
 /// A pixel coordinate pair of `column` and `row`. `column` must be in the range [0,
 /// `consts::PIXEL_COL_MAX`], and `row` must be in the range [0, `consts::PIXEL_ROW_MAX`].
@@ -34,7 +32,7 @@ pub struct PixelCoord(pub i16, pub i16);
 /// A driver for an SSD1322 display.
 pub struct Display<DI>
 where
-    DI: interface::DisplayInterface,
+    DI: WriteOnlyDataCommand,
 {
     iface: DI,
     display_size: PixelCoord,
@@ -44,7 +42,7 @@ where
 
 impl<DI> Display<DI>
 where
-    DI: interface::DisplayInterface,
+    DI: WriteOnlyDataCommand,
 {
     /// Construct a new display driver for a display with viewable dimensions `display_size`, which
     /// is connected to the interface `iface`.
@@ -156,7 +154,7 @@ where
             || upper_left.0.rem_euclid(2) != 0
             || lower_right.0.rem_euclid(2) != 0
         {
-            hprintln!("Failed to initialize a region, something is up with pixel coords").unwrap();
+            //hprintln!("Failed to initialize a region, something is up with pixel coords");
             return Err(());
         }
 

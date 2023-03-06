@@ -2,6 +2,7 @@
 //! relatively-static configuration.
 
 use command::*;
+use display_interface::{DataFormat::U8, DisplayError, WriteOnlyDataCommand};
 use interface;
 
 /// The portion of the configuration which will persist inside the `Display` because it shares
@@ -23,7 +24,7 @@ impl PersistentConfig {
         nibble_remap: NibbleRemap,
     ) -> Result<(), ()>
     where
-        DI: interface::DisplayInterface,
+        DI: WriteOnlyDataCommand,
     {
         Command::SetRemapping(
             increment_axis,
@@ -126,10 +127,9 @@ impl Config {
     /// configuration encoded in `self`.
     pub(crate) fn send<DI>(&self, iface: &mut DI) -> Result<(), ()>
     where
-        DI: interface::DisplayInterface,
+        DI: WriteOnlyDataCommand,
     {
-        self.clock_divider_cmd
-            .map_or(Ok(()), |c| c.send(iface))?;
+        self.clock_divider_cmd.map_or(Ok(()), |c| c.send(iface))?;
         self.second_precharge_period_cmd
             .map_or(Ok(()), |c| c.send(iface))?;
         self.contrast_current_cmd

@@ -6,7 +6,7 @@
 use command::consts::*;
 use display::region::{Pack8to4, Region};
 use display::PixelCoord;
-use interface;
+use display_interface::{DataFormat::U8, DisplayError, WriteOnlyDataCommand};
 
 /// A handle to a rectangular region which can be drawn into, but which is permitted to have
 /// portions that lie outside the viewable area of the display. Pixels that fall outside the
@@ -21,7 +21,7 @@ use interface;
 /// them so clashing writes are prevented.
 pub struct OverscannedRegion<'di, DI>
 where
-    DI: 'di + interface::DisplayInterface,
+    DI: 'di + WriteOnlyDataCommand,
 {
     viewable_region: Option<Region<'di, DI>>,
     upper_left: PixelCoord,
@@ -44,7 +44,7 @@ fn in_range<T: PartialOrd>(x: T, lo: T, hi: T) -> bool {
 
 impl<'di, DI> OverscannedRegion<'di, DI>
 where
-    DI: 'di + interface::DisplayInterface,
+    DI: 'di + WriteOnlyDataCommand,
 {
     /// Construct a new region. This is only called by the factory method
     /// `Display::overscanned_region`, which checks the region coordinates are correctly ordered,
