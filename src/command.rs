@@ -8,7 +8,9 @@
 use crate::display::DisplayRotation;
 
 use self::consts::*;
-use display_interface::{DataFormat::U8, DisplayError, WriteOnlyDataCommand};
+use display_interface::{
+    AsyncWriteOnlyDataCommand, DataFormat::U8, DisplayError, WriteOnlyDataCommand,
+};
 
 pub mod consts {
     //! Constants describing max supported display size and the display RAM layout.
@@ -403,6 +405,169 @@ impl Command {
     }
 }
 
+impl Command {
+    /// Transmit the command encoded by `self` to the display on interface `iface`.
+    pub async fn async_send<DI>(self, iface: &mut DI) -> Result<(), DisplayError>
+    where
+        DI: AsyncWriteOnlyDataCommand,
+    {
+        let mut arg_buf = [0u8; 2];
+        let (cmd, data) = match self {
+            Command::EnableGrayScaleTable => ok_command!(arg_buf, 0x00, []),
+            Command::SetColumnAddress(address) => match address {
+                0..=BUF_COL_MAX => {
+                    ok_command!(arg_buf, 0x10 | (address >> 4), [0x00 | (address & 0x0F)])
+                }
+                _ => Err(()),
+            },
+            Command::SetHighColumnAddress(address) => match address {
+                0..=0x7F => ok_command!(arg_buf, 0x10 + (address >> 4), []),
+                _ => Err(()),
+            },
+            Command::SetLowColumnAddress(address) => match address {
+                0..=0x7F => ok_command!(arg_buf, 0x00 + (address & 0x0F), []),
+                _ => Err(()),
+            },
+            Command::SetRowAddress(address) => match address {
+                0..=0xFF => ok_command!(arg_buf, 0xB0, [address]),
+                _ => Err(()),
+            },
+            Command::SetSegmentRemap(remap) => match remap {
+                DisplayRotation::Rotate0 => ok_command!(arg_buf, 0xA0 | 0x00, []),
+                DisplayRotation::Rotate180 => ok_command!(arg_buf, 0xA0 | 0x01, []),
+            },
+            Command::SetScanDirection(direction) => match direction {
+                0..=0x8 => ok_command!(arg_buf, 0xC0 | direction, []),
+                _ => Err(()),
+            },
+            Command::SetMultiplexRatio(ratio) => match ratio {
+                0x0F..=0x3F => ok_command!(arg_buf, 0xA8, [ratio]),
+                _ => Err(()),
+            },
+            Command::SetDCDCSetting(ratio) => match ratio {
+                0x00..=0xFF => ok_command!(arg_buf, 0xAD, [ratio]),
+                _ => Err(()),
+            },
+            Command::SetRemapping(
+                increment_axis,
+                column_remap,
+                nibble_remap,
+                com_scan_direction,
+                com_layout,
+            ) => {
+                let ia = match increment_axis {
+                    IncrementAxis::Horizontal => 0x00,
+                    IncrementAxis::Vertical => 0x01,
+                };
+                let cr = match column_remap {
+                    ColumnRemap::Forward => 0x00,
+                    ColumnRemap::Reverse => 0x02,
+                };
+                let nr = match nibble_remap {
+                    NibbleRemap::Reverse => 0x00,
+                    NibbleRemap::Forward => 0x04,
+                };
+                let csd = match com_scan_direction {
+                    ComScanDirection::RowZeroFirst => 0x00,
+                    ComScanDirection::RowZeroLast => 0x10,
+                };
+                let (interlace, dual_com) = match com_layout {
+                    ComLayout::Progressive => (0x00, 0x01),
+                    ComLayout::Interlaced => (0x20, 0x01),
+                    ComLayout::DualProgressive => (0x00, 0x11),
+                };
+                ok_command!(arg_buf, 0xA0 | (ia | cr | nr | csd | interlace), [])
+            }
+            Command::SetStartLine(line) => match line {
+                0..=PIXEL_ROW_MAX => ok_command!(arg_buf, 0x40 | line, []),
+                _ => Err(()),
+            },
+            Command::SetDisplayOffset(line) => match line {
+                0..=PIXEL_ROW_MAX => ok_command!(arg_buf, 0xD3, [line]),
+                _ => Err(()),
+            },
+            Command::SetDisplayMode(mode) => ok_command!(
+                arg_buf,
+                match mode {
+                    DisplayMode::BlankDark => 0xA4,
+                    DisplayMode::BlankBright => 0xA5,
+                    DisplayMode::Normal => 0xA6,
+                    DisplayMode::Inverse => 0xA7,
+                },
+                []
+            ),
+            Command::EnablePartialDisplay(start, end) => match (start, end) {
+                (0..=PIXEL_ROW_MAX, 0..=PIXEL_ROW_MAX) if start <= end => {
+                    ok_command!(arg_buf, 0xA8, [start, end])
+                }
+                _ => Err(()),
+            },
+            Command::DisablePartialDisplay => ok_command!(arg_buf, 0xA9, []),
+            Command::SetSleepMode(ena) => ok_command!(
+                arg_buf,
+                match ena {
+                    true => 0xAE,
+                    false => 0xAF,
+                },
+                []
+            ),
+            Command::SetPhaseLengths(phase_1, phase_2) => match (phase_1, phase_2) {
+                (5..=31, 3..=15) => {
+                    let p1 = (phase_1 - 1) >> 1;
+                    let p2 = 0xF0 & (phase_2 << 4);
+                    ok_command!(arg_buf, 0xB1, [p1 | p2])
+                }
+                _ => Err(()),
+            },
+            Command::SetDischargeLevel(level) => match level {
+                0..=0x0F => ok_command!(arg_buf, 0x30 | level, []),
+                _ => Err(()),
+            },
+            Command::SetClockDivider(divider) => match divider {
+                0..=0xFF => ok_command!(arg_buf, 0xD5, [divider]),
+                _ => Err(()),
+            },
+            Command::SetSecondPrechargePeriod(period) => match period {
+                0..=0x22 => ok_command!(arg_buf, 0xD9, [period]),
+                _ => Err(()),
+            },
+            Command::SetDefaultGrayScaleTable => ok_command!(arg_buf, 0xB9, []),
+            Command::SetPreChargeVoltage(voltage) => match voltage {
+                0..=0x50 => ok_command!(arg_buf, 0xDC, [voltage]),
+                _ => Err(()),
+            },
+            Command::SetComDeselectVoltage(voltage) => match voltage {
+                0..=0x50 => ok_command!(arg_buf, 0xDB, [voltage]),
+                _ => Err(()),
+            },
+            Command::SetContrastCurrent(current) => ok_command!(arg_buf, 0x81, [current]),
+            Command::SetMasterContrast(contrast) => match contrast {
+                0..=15 => ok_command!(arg_buf, 0xC7, [contrast]),
+                _ => Err(()),
+            },
+            Command::SetMuxRatio(ratio) => match ratio {
+                16..=NUM_PIXEL_ROWS => ok_command!(arg_buf, 0xCA, [ratio - 1]),
+                _ => Err(()),
+            },
+            Command::SetCommandLock(ena) => {
+                let e = match ena {
+                    true => 0x16,
+                    false => 0x12,
+                };
+                ok_command!(arg_buf, 0xFD, [e])
+            }
+        }
+        .map_err(|_| DisplayError::InvalidFormatError)?;
+
+        if data.len() == 0 {
+            iface.send_commands(U8(&[cmd])).await?;
+        } else {
+            iface.send_commands(U8(&[cmd, data[0]])).await?;
+        }
+        Ok(())
+    }
+}
+
 impl<'a> BufCommand<'a> {
     /// Transmit the command encoded by `self` to the display on interface `iface`.
     pub fn send<DI>(self, iface: &mut DI) -> Result<(), DisplayError>
@@ -435,6 +600,43 @@ impl<'a> BufCommand<'a> {
         }
         if data.len() != 0 {
             iface.send_data(U8(&data))?;
+        }
+        Ok(())
+    }
+}
+
+impl<'a> BufCommand<'a> {
+    /// Transmit the command encoded by `self` to the display on interface `iface`.
+    pub async fn async_send<DI>(self, iface: &mut DI) -> Result<(), DisplayError>
+    where
+        DI: AsyncWriteOnlyDataCommand,
+    {
+        let (cmd, data) = match self {
+            BufCommand::SetGrayScaleTable(table) => {
+                // Each element must be greater than the previous one, and all must be
+                // between 0 and 180.
+                let ok = table.len() == 15
+                    && table[1..]
+                        .iter()
+                        .fold((true, 0), |(ok_so_far, prev), cur| {
+                            (ok_so_far && prev < *cur && *cur <= 180, *cur)
+                        })
+                        .0
+                    && table[0] <= table[1];
+                if ok {
+                    Ok((0xB8, table))
+                } else {
+                    Err(())
+                }
+            }
+            BufCommand::WriteImageData(buf) => Ok((0x00, buf)),
+        }
+        .map_err(|_| DisplayError::InvalidFormatError)?;
+        if cmd != 0x00 {
+            iface.send_commands(U8(&[cmd])).await?;
+        }
+        if data.len() != 0 {
+            iface.send_data(U8(&data)).await?;
         }
         Ok(())
     }

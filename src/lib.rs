@@ -49,6 +49,7 @@ extern crate itertools;
 #[macro_use]
 extern crate nb;
 
+pub mod async_display;
 pub mod command;
 pub mod config;
 pub mod display;
@@ -56,6 +57,7 @@ pub mod display;
 pub mod mode;
 
 // Re-exports for primary API.
+pub use async_display::AsyncDisplay;
 pub use command::{consts, ComLayout, ComScanDirection};
 pub use config::Config;
 pub use display::{Display, PixelCoord};
