@@ -36,7 +36,6 @@
 //! Example code is available in the `examples` folder.
 
 #![cfg_attr(not(feature = "std"), no_std)]
-#![feature(euclidean_division)]
 
 #[cfg(feature = "std")]
 extern crate core;
@@ -53,10 +52,10 @@ extern crate nb;
 pub mod command;
 pub mod config;
 pub mod display;
-pub mod interface;
+
+pub mod mode;
 
 // Re-exports for primary API.
 pub use command::{consts, ComLayout, ComScanDirection};
 pub use config::Config;
 pub use display::{Display, PixelCoord};
-pub use interface::spi::SpiInterface;

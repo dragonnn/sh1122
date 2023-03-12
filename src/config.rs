@@ -1,7 +1,7 @@
 //! Defines structs for storing register values of commands in the SSD1322 that are associated with
 //! relatively-static configuration.
 
-use display_interface::WriteOnlyDataCommand;
+use display_interface::{DisplayError, WriteOnlyDataCommand};
 
 use crate::command::*;
 
@@ -22,7 +22,7 @@ impl PersistentConfig {
         increment_axis: IncrementAxis,
         column_remap: ColumnRemap,
         nibble_remap: NibbleRemap,
-    ) -> Result<(), ()>
+    ) -> Result<(), DisplayError>
     where
         DI: WriteOnlyDataCommand,
     {
@@ -125,7 +125,7 @@ impl Config {
 
     /// Transmit commands to the display at `iface` necessary to put that display into the
     /// configuration encoded in `self`.
-    pub(crate) fn send<DI>(&self, iface: &mut DI) -> Result<(), ()>
+    pub(crate) fn send<DI>(&self, iface: &mut DI) -> Result<(), DisplayError>
     where
         DI: WriteOnlyDataCommand,
     {

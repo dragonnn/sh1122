@@ -14,12 +14,16 @@ edition = "2021"
 embedded-hal = "0.2"
 nb = "1.0.0"
 embedded-graphics = "0.7.1"
-display-interface = "0.4.0"
+embedded-graphics-core = { version = "0.3.2", optional = true }
+display-interface = { path = "../display-interface", version = "0.4.0", features = [
+    "async",
+] }
 
 [dependencies.itertools]
 version = "0.10.5"
 default-features = false
 
 [features]
-default = []
+default = ["graphics"]
+graphics = ["embedded-graphics-core"]
 std = []

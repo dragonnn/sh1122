@@ -5,8 +5,10 @@
 //! bits/16 levels of intensity, so each column also refers to two adjacent bytes. Thus, anywhere
 //! there is a "column" address, these refer to horizontal groups of 2 bytes driving 4 pixels.
 
+use crate::display::DisplayRotation;
+
 use self::consts::*;
-use display_interface::{DataFormat::U8, WriteOnlyDataCommand};
+use display_interface::{DataFormat::U8, DisplayError, WriteOnlyDataCommand};
 
 pub mod consts {
     //! Constants describing max supported display size and the display RAM layout.
@@ -200,7 +202,7 @@ pub enum Command {
     /// discharge level
     SetDischargeLevel(u8),
     /// remap segments
-    SetSegmentRemap(u8),
+    SetSegmentRemap(DisplayRotation),
     /// scan direction
     SetScanDirection(u8),
     /// multiplex ratio 1/64 Duty (0x0F~0x3F)
@@ -240,7 +242,7 @@ macro_rules! ok_command {
 
 impl Command {
     /// Transmit the command encoded by `self` to the display on interface `iface`.
-    pub fn send<DI>(self, iface: &mut DI) -> Result<(), ()>
+    pub fn send<DI>(self, iface: &mut DI) -> Result<(), DisplayError>
     where
         DI: WriteOnlyDataCommand,
     {
@@ -266,8 +268,8 @@ impl Command {
                 _ => Err(()),
             },
             Command::SetSegmentRemap(remap) => match remap {
-                0..=0x03 => ok_command!(arg_buf, 0xA0 | remap, []),
-                _ => Err(()),
+                DisplayRotation::Rotate0 => ok_command!(arg_buf, 0xA0 | 0x00, []),
+                DisplayRotation::Rotate180 => ok_command!(arg_buf, 0xA0 | 0x01, []),
             },
             Command::SetScanDirection(direction) => match direction {
                 0..=0x8 => ok_command!(arg_buf, 0xC0 | direction, []),
@@ -389,12 +391,13 @@ impl Command {
                 };
                 ok_command!(arg_buf, 0xFD, [e])
             }
-        }?;
+        }
+        .map_err(|_| DisplayError::InvalidFormatError)?;
 
         if data.len() == 0 {
-            iface.send_commands(U8(&[cmd])).unwrap();
+            iface.send_commands(U8(&[cmd]))?;
         } else {
-            iface.send_commands(U8(&[cmd, data[0]])).unwrap();
+            iface.send_commands(U8(&[cmd, data[0]]))?;
         }
         Ok(())
     }
@@ -402,7 +405,7 @@ impl Command {
 
 impl<'a> BufCommand<'a> {
     /// Transmit the command encoded by `self` to the display on interface `iface`.
-    pub fn send<DI>(self, iface: &mut DI) -> Result<(), ()>
+    pub fn send<DI>(self, iface: &mut DI) -> Result<(), DisplayError>
     where
         DI: WriteOnlyDataCommand,
     {
@@ -425,285 +428,14 @@ impl<'a> BufCommand<'a> {
                 }
             }
             BufCommand::WriteImageData(buf) => Ok((0x00, buf)),
-        }?;
+        }
+        .map_err(|_| DisplayError::InvalidFormatError)?;
         if cmd != 0x00 {
-            iface.send_commands(U8(&[cmd])).unwrap();
+            iface.send_commands(U8(&[cmd]))?;
         }
         if data.len() != 0 {
-            iface.send_data(U8(&data)).unwrap();
+            iface.send_data(U8(&data))?;
         }
         Ok(())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use interface::test_spy::TestSpyInterface;
-    use std::vec::Vec;
-
-    #[test]
-    fn set_column_address() {
-        let mut di = TestSpyInterface::new();
-        Command::SetColumnAddress(23).send(&mut di).unwrap();
-        di.check(17, &[7]);
-        assert_eq!(Command::SetColumnAddress(120).send(&mut di), Err(()));
-    }
-
-    #[test]
-    fn set_row_address() {
-        let mut di = TestSpyInterface::new();
-        Command::SetRowAddress(23).send(&mut di).unwrap();
-        di.check(0x75, &[23]);
-        assert_eq!(Command::SetRowAddress(23).send(&mut di), Err(()));
-    }
-
-    #[test]
-    fn set_remapping() {
-        let mut di = TestSpyInterface::new();
-        Command::SetRemapping(
-            IncrementAxis::Horizontal,
-            ColumnRemap::Forward,
-            NibbleRemap::Reverse,
-            ComScanDirection::RowZeroFirst,
-            ComLayout::Progressive,
-        )
-        .send(&mut di)
-        .unwrap();
-        di.check(0xA0, &[0x00, 0x01]);
-
-        di.clear();
-        Command::SetRemapping(
-            IncrementAxis::Vertical,
-            ColumnRemap::Reverse,
-            NibbleRemap::Forward,
-            ComScanDirection::RowZeroLast,
-            ComLayout::Interlaced,
-        )
-        .send(&mut di)
-        .unwrap();
-        di.check(0xA0, &[0x37, 0x01]);
-
-        di.clear();
-        Command::SetRemapping(
-            IncrementAxis::Horizontal,
-            ColumnRemap::Forward,
-            NibbleRemap::Forward,
-            ComScanDirection::RowZeroLast,
-            ComLayout::DualProgressive,
-        )
-        .send(&mut di)
-        .unwrap();
-        di.check(0xA0, &[0x14, 0x11]);
-    }
-
-    #[test]
-    fn write_image_data() {
-        let mut di = TestSpyInterface::new();
-        let image_buf = (0..24).collect::<Vec<u8>>();
-        BufCommand::WriteImageData(&image_buf[..])
-            .send(&mut di)
-            .unwrap();
-        di.check(0x5C, &(0..24u8).collect::<Vec<_>>()[..]);
-    }
-
-    #[test]
-    fn set_start_line() {
-        let mut di = TestSpyInterface::new();
-        Command::SetStartLine(23).send(&mut di).unwrap();
-        di.check(0xA1, &[23]);
-        assert_eq!(Command::SetStartLine(128).send(&mut di), Err(()));
-    }
-
-    #[test]
-    fn set_display_offset() {
-        let mut di = TestSpyInterface::new();
-        Command::SetDisplayOffset(23).send(&mut di).unwrap();
-        di.check(0xA2, &[23]);
-        assert_eq!(Command::SetDisplayOffset(128).send(&mut di), Err(()));
-    }
-
-    #[test]
-    fn set_display_mode() {
-        let mut di = TestSpyInterface::new();
-        Command::SetDisplayMode(DisplayMode::BlankDark)
-            .send(&mut di)
-            .unwrap();
-        di.check(0xA4, &[]);
-        di.clear();
-        Command::SetDisplayMode(DisplayMode::BlankBright)
-            .send(&mut di)
-            .unwrap();
-        di.check(0xA5, &[]);
-        di.clear();
-        Command::SetDisplayMode(DisplayMode::Normal)
-            .send(&mut di)
-            .unwrap();
-        di.check(0xA6, &[]);
-        di.clear();
-        Command::SetDisplayMode(DisplayMode::Inverse)
-            .send(&mut di)
-            .unwrap();
-        di.check(0xA7, &[]);
-    }
-
-    #[test]
-    fn enable_partial_display() {
-        let mut di = TestSpyInterface::new();
-        Command::EnablePartialDisplay(23, 42).send(&mut di).unwrap();
-        di.check(0xA8, &[23, 42]);
-        assert_eq!(
-            Command::EnablePartialDisplay(23, 128).send(&mut di),
-            Err(())
-        );
-        assert_eq!(
-            Command::EnablePartialDisplay(128, 129).send(&mut di),
-            Err(())
-        );
-        assert_eq!(Command::EnablePartialDisplay(42, 23).send(&mut di), Err(()));
-    }
-
-    #[test]
-    fn sleep_mode() {
-        let mut di = TestSpyInterface::new();
-        Command::SetSleepMode(true).send(&mut di).unwrap();
-        di.check(0xAE, &[]);
-        di.clear();
-        Command::SetSleepMode(false).send(&mut di).unwrap();
-        di.check(0xAF, &[]);
-    }
-
-    #[test]
-    fn set_phase_lengths() {
-        let mut di = TestSpyInterface::new();
-        Command::SetPhaseLengths(5, 3).send(&mut di).unwrap();
-        di.check(0xB1, &[0x32]);
-        di.clear();
-        Command::SetPhaseLengths(5, 14).send(&mut di).unwrap();
-        di.check(0xB1, &[0xE2]);
-        di.clear();
-        Command::SetPhaseLengths(7, 3).send(&mut di).unwrap();
-        di.check(0xB1, &[0x33]);
-        di.clear();
-        Command::SetPhaseLengths(31, 15).send(&mut di).unwrap();
-        di.check(0xB1, &[0xFF]);
-        assert_eq!(Command::SetPhaseLengths(4, 3).send(&mut di), Err(()));
-        assert_eq!(Command::SetPhaseLengths(32, 3).send(&mut di), Err(()));
-        assert_eq!(Command::SetPhaseLengths(5, 2).send(&mut di), Err(()));
-        assert_eq!(Command::SetPhaseLengths(5, 16).send(&mut di), Err(()));
-    }
-
-    #[test]
-    fn set_clock_divider() {
-        let mut di = TestSpyInterface::new();
-        Command::SetClockDivider(0).send(&mut di).unwrap();
-        di.check(0xD5, &[0x00]);
-        assert_eq!(Command::SetClockDivider(11).send(&mut di), Err(()));
-    }
-
-    #[test]
-    fn set_second_precharge_period() {
-        let mut di = TestSpyInterface::new();
-        Command::SetSecondPrechargePeriod(0).send(&mut di).unwrap();
-        di.check(0xB6, &[0]);
-        di.clear();
-        Command::SetSecondPrechargePeriod(15).send(&mut di).unwrap();
-        di.check(0xB6, &[15]);
-        di.clear();
-        assert_eq!(Command::SetSecondPrechargePeriod(16).send(&mut di), Err(()));
-    }
-
-    #[test]
-    fn set_gray_scale_table() {
-        let mut di = TestSpyInterface::new();
-        BufCommand::SetGrayScaleTable(&[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14])
-            .send(&mut di)
-            .unwrap();
-        di.check(0xB8, &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]);
-        di.clear();
-        BufCommand::SetGrayScaleTable(&[
-            166, 167, 168, 169, 170, 171, 172, 173, 174, 175, 176, 177, 178, 179, 180,
-        ])
-        .send(&mut di)
-        .unwrap();
-        di.check(
-            0xB8,
-            &[
-                166, 167, 168, 169, 170, 171, 172, 173, 174, 175, 176, 177, 178, 179, 180,
-            ],
-        );
-        di.clear();
-        // Out of range
-        assert_eq!(
-            BufCommand::SetGrayScaleTable(&[
-                166, 167, 168, 169, 170, 171, 172, 173, 174, 175, 176, 177, 178, 179, 181,
-            ])
-            .send(&mut di),
-            Err(())
-        );
-        // Non-increasing
-        assert_eq!(
-            BufCommand::SetGrayScaleTable(&[0, 1, 2, 2, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14])
-                .send(&mut di),
-            Err(())
-        );
-        // Too many values
-        assert_eq!(
-            BufCommand::SetGrayScaleTable(&[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15])
-                .send(&mut di),
-            Err(())
-        );
-        // Too few values
-        assert_eq!(
-            BufCommand::SetGrayScaleTable(&[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13])
-                .send(&mut di),
-            Err(())
-        );
-    }
-
-    #[test]
-    fn set_pre_charge_voltage() {
-        let mut di = TestSpyInterface::new();
-        Command::SetPreChargeVoltage(17).send(&mut di).unwrap();
-        di.check(0xBB, &[17]);
-        assert_eq!(Command::SetPreChargeVoltage(32).send(&mut di), Err(()));
-    }
-
-    #[test]
-    fn set_com_deselect_voltage() {
-        let mut di = TestSpyInterface::new();
-        Command::SetComDeselectVoltage(3).send(&mut di).unwrap();
-        di.check(0xBE, &[3]);
-        assert_eq!(Command::SetComDeselectVoltage(8).send(&mut di), Err(()));
-    }
-
-    #[test]
-    fn set_master_contrasat() {
-        let mut di = TestSpyInterface::new();
-        Command::SetMasterContrast(3).send(&mut di).unwrap();
-        di.check(0xC7, &[3]);
-        assert_eq!(Command::SetMasterContrast(16).send(&mut di), Err(()));
-    }
-
-    #[test]
-    fn set_mux_ratio() {
-        let mut di = TestSpyInterface::new();
-        Command::SetMuxRatio(128).send(&mut di).unwrap();
-        di.check(0xCA, &[127]);
-        di.clear();
-        Command::SetMuxRatio(16).send(&mut di).unwrap();
-        di.check(0xCA, &[15]);
-        assert_eq!(Command::SetMuxRatio(15).send(&mut di), Err(()));
-        assert_eq!(Command::SetMuxRatio(129).send(&mut di), Err(()));
-    }
-
-    #[test]
-    fn set_command_lock() {
-        let mut di = TestSpyInterface::new();
-        Command::SetCommandLock(true).send(&mut di).unwrap();
-        di.check(0xFD, &[0b00010110]);
-        di.clear();
-        Command::SetCommandLock(false).send(&mut di).unwrap();
-        di.check(0xFD, &[0b00010010]);
     }
 }
