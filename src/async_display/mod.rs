@@ -19,7 +19,7 @@ pub mod buffered_graphics;
 use display_interface::{AsyncWriteOnlyDataCommand, DataFormat::U8, DisplayError};
 
 use crate::{
-    command::{BufCommand, Command},
+    command::*,
     config::PersistentConfig,
     consts::*,
     display::DisplayRotation,
@@ -118,15 +118,34 @@ where
     /// Initialize the display with a config message.
     pub async fn init(&mut self, config: Option<Config>) -> Result<(), DisplayError> {
         self.sleep(true).await?;
+
+        match self.rotation {
+            DisplayRotation::Rotate0 => {
+                Command::SetSegmentRemap(self.rotation)
+                    .async_send(&mut self.iface)
+                    .await?;
+                Command::SetScanDirection(0x00)
+                    .async_send(&mut self.iface)
+                    .await?;
+            }
+            DisplayRotation::Rotate180 => {
+                Command::SetSegmentRemap(self.rotation)
+                    .async_send(&mut self.iface)
+                    .await?;
+                Command::SetScanDirection(0x08)
+                    .async_send(&mut self.iface)
+                    .await?;
+                // No idea why this is need in that rotation
+                Command::SetRowAddress(32)
+                    .async_send(&mut self.iface)
+                    .await?;
+            }
+        }
         Command::SetStartLine(0).async_send(&mut self.iface).await?;
 
-        Command::SetSegmentRemap(self.rotation)
-            .async_send(&mut self.iface)
-            .await?;
-
-        Command::SetScanDirection(0x0)
-            .async_send(&mut self.iface)
-            .await?;
+        //Command::SetScanDirection(0x00)
+        //    .async_send(&mut self.iface)
+        //    .await?;
         Command::SetContrastCurrent(0x80)
             .async_send(&mut self.iface)
             .await?;

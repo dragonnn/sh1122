@@ -269,6 +269,7 @@ impl Command {
                 0..=0xFF => ok_command!(arg_buf, 0xB0, [address]),
                 _ => Err(()),
             },
+            //TODO: this should be part of SetRemapping
             Command::SetSegmentRemap(remap) => match remap {
                 DisplayRotation::Rotate0 => ok_command!(arg_buf, 0xA0 | 0x00, []),
                 DisplayRotation::Rotate180 => ok_command!(arg_buf, 0xA0 | 0x01, []),

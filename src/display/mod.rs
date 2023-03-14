@@ -19,7 +19,7 @@ use display_interface::{
 };
 
 use crate::{
-    command::{BufCommand, Command},
+    command::*,
     config::PersistentConfig,
     consts::*,
     mode::{BasicMode, BufferedGraphicsMode, TerminalMode},
@@ -121,8 +121,19 @@ where
     pub fn init(&mut self, config: Option<Config>) -> Result<(), DisplayError> {
         self.sleep(true)?;
         Command::SetStartLine(0).send(&mut self.iface)?;
-
-        Command::SetSegmentRemap(self.rotation).send(&mut self.iface)?;
+        match self.rotation {
+            DisplayRotation::Rotate0 => {}
+            DisplayRotation::Rotate180 => {
+                /*Command::SetRemapping(
+                    IncrementAxis::Horizontal,
+                    ColumnRemap::Forward,
+                    NibbleRemap::Reverse,
+                    ComScanDirection::RowZeroLast,
+                    ComLayout::Progressive,
+                )
+                .send(&mut self.iface)?;*/
+            }
+        }
 
         Command::SetScanDirection(0x0).send(&mut self.iface)?;
         Command::SetContrastCurrent(0x80).send(&mut self.iface)?;
@@ -167,7 +178,8 @@ where
 
     pub fn set_rotation(&mut self, rotation: DisplayRotation) -> Result<(), DisplayError> {
         self.rotation = rotation;
-        Command::SetSegmentRemap(self.rotation).send(&mut self.iface)
+        //Command::SetSegmentRemap(self.rotation).send(&mut self.iface)
+        Ok(())
     }
 
     pub fn draw(&mut self, buffer: &[u8]) -> Result<(), DisplayError> {
