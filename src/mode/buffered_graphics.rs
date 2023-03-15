@@ -63,7 +63,7 @@ where
 
     /// Turn a pixel on or off. A non-zero `value` is treated as on, `0` as off. If the X and Y
     /// coordinates are out of the bounds of the display, this method call is a noop.
-    pub fn set_pixel(&mut self, x: u32, y: u32, value: Gray8) {
+    pub fn set_pixel(&mut self, x: u32, y: u32, value: Gray4) {
         let value = value.into_storage() / 16;
         let rotation = self.rotation;
 
@@ -88,7 +88,7 @@ where
     }
 }
 
-use embedded_graphics::pixelcolor::Gray8;
+use embedded_graphics::pixelcolor::Gray4;
 #[cfg(feature = "graphics")]
 use embedded_graphics_core::{
     draw_target::DrawTarget,
@@ -104,7 +104,7 @@ impl<DI> DrawTarget for Display<DI, BufferedGraphicsMode>
 where
     DI: WriteOnlyDataCommand,
 {
-    type Color = Gray8;
+    type Color = Gray4;
     type Error = DisplayError;
 
     fn draw_iter<I>(&mut self, pixels: I) -> Result<(), Self::Error>
