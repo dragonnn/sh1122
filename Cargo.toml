@@ -11,16 +11,17 @@ exclude = [".gitignore", "demo.jpg"]
 edition = "2021"
 
 [dependencies]
-embedded-hal = "0.2"
+embedded-hal = "1.0.0-rc.1"
 nb = "1.0.0"
-embedded-graphics = "0.7.1"
-embedded-graphics-core = { version = "0.3.2", optional = true }
-display-interface = { path = "../display-interface", version = "0.4.0", features = [
+embedded-graphics = "0.8.0"
+embedded-graphics-core = { version = "0.4.0", optional = true }
+display-interface = { git = "https://github.com/therealprof/display-interface", version = "0.5.0-alpha.1", features = [
     "async",
+    "nightly",
 ] }
 
 [dependencies.itertools]
-version = "0.10.5"
+version = "0.11.0"
 default-features = false
 
 [features]
