@@ -16,6 +16,7 @@ nb = "1.0.0"
 embedded-graphics = "0.8.0"
 embedded-graphics-core = { version = "0.4.0", optional = true }
 display-interface = "0.5.0"
+embassy-time = "0.3"
 
 [dependencies.itertools]
 version = "0.12.1"

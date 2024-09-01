@@ -18,6 +18,7 @@ pub mod buffered_graphics;
 
 use display_interface::{AsyncWriteOnlyDataCommand, DataFormat::U8, DisplayError};
 
+use self::buffered_graphics::AsyncBufferedGraphicsMode;
 use crate::{
     command::*,
     config::PersistentConfig,
@@ -26,8 +27,6 @@ use crate::{
     mode::{BasicMode, TerminalMode},
     Config, PixelCoord,
 };
-
-use self::buffered_graphics::AsyncBufferedGraphicsMode;
 
 /// A driver for an SSD1322 display.
 pub struct AsyncDisplay<DI, MODE>
@@ -57,12 +56,7 @@ where
     /// numbering has relative to the driver and COM line numbering: `display_offset.0` indicates
     /// the driver line column which corresponds to pixel column 0 of the display, and
     /// `display_offset.1` indicates which COM line corresponds to pixel row 0 of the display.
-    pub fn new(
-        iface: DI,
-        display_size: PixelCoord,
-        display_offset: PixelCoord,
-        rotation: DisplayRotation,
-    ) -> Self {
+    pub fn new(iface: DI, display_size: PixelCoord, display_offset: PixelCoord, rotation: DisplayRotation) -> Self {
         if false
             || display_size.0 > NUM_PIXEL_COLS as i16
             || display_size.1 > NUM_PIXEL_ROWS as i16
@@ -121,24 +115,14 @@ where
 
         match self.rotation {
             DisplayRotation::Rotate0 => {
-                Command::SetSegmentRemap(self.rotation)
-                    .async_send(&mut self.iface)
-                    .await?;
-                Command::SetScanDirection(0x00)
-                    .async_send(&mut self.iface)
-                    .await?;
+                Command::SetSegmentRemap(self.rotation).async_send(&mut self.iface).await?;
+                Command::SetScanDirection(0x00).async_send(&mut self.iface).await?;
             }
             DisplayRotation::Rotate180 => {
-                Command::SetSegmentRemap(self.rotation)
-                    .async_send(&mut self.iface)
-                    .await?;
-                Command::SetScanDirection(0x08)
-                    .async_send(&mut self.iface)
-                    .await?;
+                Command::SetSegmentRemap(self.rotation).async_send(&mut self.iface).await?;
+                Command::SetScanDirection(0x08).async_send(&mut self.iface).await?;
                 // No idea why this is need in that rotation
-                Command::SetRowAddress(32)
-                    .async_send(&mut self.iface)
-                    .await?;
+                Command::SetRowAddress(32).async_send(&mut self.iface).await?;
             }
         }
         Command::SetStartLine(0).async_send(&mut self.iface).await?;
@@ -146,55 +130,34 @@ where
         //Command::SetScanDirection(0x00)
         //    .async_send(&mut self.iface)
         //    .await?;
-        Command::SetContrastCurrent(0x80)
-            .async_send(&mut self.iface)
-            .await?;
-        Command::SetMultiplexRatio(0x3F)
-            .async_send(&mut self.iface)
-            .await?;
-        Command::SetDCDCSetting(0x81)
-            .async_send(&mut self.iface)
-            .await?;
-        Command::SetClockDivider(0x50)
-            .async_send(&mut self.iface)
-            .await?;
-        Command::SetDisplayOffset(0x00)
-            .async_send(&mut self.iface)
-            .await?;
-        Command::SetSecondPrechargePeriod(0x22)
-            .async_send(&mut self.iface)
-            .await?;
-        Command::SetComDeselectVoltage(0x35)
-            .async_send(&mut self.iface)
-            .await?;
-        Command::SetPreChargeVoltage(0x35)
-            .async_send(&mut self.iface)
-            .await?;
-        Command::SetDischargeLevel(0x0)
-            .async_send(&mut self.iface)
-            .await?;
-        self.sleep(false).await
+        Command::SetContrastCurrent(0x80).async_send(&mut self.iface).await?;
+        Command::SetMultiplexRatio(0x3F).async_send(&mut self.iface).await?;
+        Command::SetDCDCSetting(0x81).async_send(&mut self.iface).await?;
+        Command::SetClockDivider(0x50).async_send(&mut self.iface).await?;
+        Command::SetDisplayOffset(0x00).async_send(&mut self.iface).await?;
+        Command::SetSecondPrechargePeriod(0x22).async_send(&mut self.iface).await?;
+        Command::SetComDeselectVoltage(0x35).async_send(&mut self.iface).await?;
+        Command::SetPreChargeVoltage(0x35).async_send(&mut self.iface).await?;
+        Command::SetDischargeLevel(0x0).async_send(&mut self.iface).await?;
+        embassy_time::Timer::after_millis(100).await;
+        self.sleep(false).await;
+        embassy_time::Timer::after_millis(100).await;
+        Ok(())
     }
 
     /// Control sleep mode.
     pub async fn sleep(&mut self, enabled: bool) -> Result<(), DisplayError> {
-        Command::SetSleepMode(enabled)
-            .async_send(&mut self.iface)
-            .await
+        Command::SetSleepMode(enabled).async_send(&mut self.iface).await
     }
 
     /// Control the master contrast.
     pub async fn contrast(&mut self, contrast: u8) -> Result<(), DisplayError> {
-        Command::SetMasterContrast(contrast)
-            .async_send(&mut self.iface)
-            .await
+        Command::SetMasterContrast(contrast).async_send(&mut self.iface).await
     }
 
     /// Set the display brightness look-up table.
     pub async fn gray_scale_table(&mut self, table: &[u8]) -> Result<(), DisplayError> {
-        BufCommand::SetGrayScaleTable(table)
-            .async_send(&mut self.iface)
-            .await
+        BufCommand::SetGrayScaleTable(table).async_send(&mut self.iface).await
     }
 
     /// Set the vertical pan.
@@ -203,9 +166,7 @@ where
     /// relative to the active set of COM lines, allowing any display-height-sized window of the
     /// entire 128 rows of display RAM to be made visible.
     pub async fn vertical_pan(&mut self, offset: u8) -> Result<(), DisplayError> {
-        Command::SetStartLine(offset)
-            .async_send(&mut self.iface)
-            .await
+        Command::SetStartLine(offset).async_send(&mut self.iface).await
     }
 
     pub fn dimensions(&self) -> (u16, u8) {
@@ -214,9 +175,7 @@ where
 
     pub async fn set_rotation(&mut self, rotation: DisplayRotation) -> Result<(), DisplayError> {
         self.rotation = rotation;
-        Command::SetSegmentRemap(self.rotation)
-            .async_send(&mut self.iface)
-            .await
+        Command::SetSegmentRemap(self.rotation).async_send(&mut self.iface).await
     }
 
     pub async fn draw(&mut self, buffer: &[u8]) -> Result<(), DisplayError> {

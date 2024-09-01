@@ -1,8 +1,9 @@
 //! Buffered graphics mode.
 
-use crate::{consts::*, display::DisplayRotation, AsyncDisplay};
 use display_interface::{AsyncWriteOnlyDataCommand, DisplayError};
 use embedded_graphics::prelude::*;
+
+use crate::{consts::*, display::DisplayRotation, AsyncDisplay};
 /// Buffered graphics mode.
 ///
 /// This mode keeps a pixel buffer in system memory, up to 1024 bytes for 128x64px displays. This
@@ -17,9 +18,7 @@ pub struct AsyncBufferedGraphicsMode {
 impl AsyncBufferedGraphicsMode {
     /// Create a new buffered graphics mode instance.
     pub(crate) fn new() -> Self {
-        Self {
-            buffer: [0u8; (NUM_PIXEL_COLS as usize * NUM_PIXEL_ROWS as usize) / 2],
-        }
+        Self { buffer: [0u8; (NUM_PIXEL_COLS as usize * NUM_PIXEL_ROWS as usize) / 2] }
     }
 }
 
@@ -59,6 +58,8 @@ where
     ///
     /// This only updates the parts of the display that have changed since the last flush.
     pub async fn flush(&mut self) -> Result<(), DisplayError> {
+        //Command::SetColumnAddress(0).async_send(&mut self.iface).await?;
+        //Command::SetRowAddress(0).async_send(&mut self.iface).await?;
         Self::draw_iface(&mut self.iface, &self.mode.buffer).await
     }
 
@@ -98,6 +99,7 @@ use embedded_graphics_core::{
     Pixel,
 };
 
+use super::Command;
 use crate::mode::DisplayConfig;
 
 #[cfg(feature = "graphics")]
