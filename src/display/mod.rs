@@ -14,9 +14,7 @@ pub mod testing {
     }
 }
 
-use display_interface::{
-    AsyncWriteOnlyDataCommand, DataFormat::U8, DisplayError, WriteOnlyDataCommand,
-};
+use display_interface::{AsyncWriteOnlyDataCommand, DataFormat::U8, DisplayError, WriteOnlyDataCommand};
 
 use crate::{
     command::*,
@@ -59,12 +57,7 @@ where
     /// numbering has relative to the driver and COM line numbering: `display_offset.0` indicates
     /// the driver line column which corresponds to pixel column 0 of the display, and
     /// `display_offset.1` indicates which COM line corresponds to pixel row 0 of the display.
-    pub fn new(
-        iface: DI,
-        display_size: PixelCoord,
-        display_offset: PixelCoord,
-        rotation: DisplayRotation,
-    ) -> Self {
+    pub fn new(iface: DI, display_size: PixelCoord, display_offset: PixelCoord, rotation: DisplayRotation) -> Self {
         if false
             || display_size.0 > NUM_PIXEL_COLS as i16
             || display_size.1 > NUM_PIXEL_ROWS as i16
@@ -138,7 +131,7 @@ where
         Command::SetScanDirection(0x0).send(&mut self.iface)?;
         Command::SetContrastCurrent(0x80).send(&mut self.iface)?;
         Command::SetMultiplexRatio(0x3F).send(&mut self.iface)?;
-        Command::SetDCDCSetting(0x81).send(&mut self.iface)?;
+        Command::SetDCDCSetting(DCDCSetting::from_bytes([0x81])).send(&mut self.iface)?;
         Command::SetClockDivider(0x50).send(&mut self.iface)?;
         Command::SetDisplayOffset(0x00).send(&mut self.iface)?;
         Command::SetSecondPrechargePeriod(0x22).send(&mut self.iface)?;
@@ -155,7 +148,7 @@ where
 
     /// Control the master contrast.
     pub fn contrast(&mut self, contrast: u8) -> Result<(), DisplayError> {
-        Command::SetMasterContrast(contrast).send(&mut self.iface)
+        Command::SetContrastCurrent(contrast).send(&mut self.iface)
     }
 
     /// Set the display brightness look-up table.

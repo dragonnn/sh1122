@@ -5,12 +5,11 @@
 //! bits/16 levels of intensity, so each column also refers to two adjacent bytes. Thus, anywhere
 //! there is a "column" address, these refer to horizontal groups of 2 bytes driving 4 pixels.
 
-use crate::display::DisplayRotation;
+use display_interface::{AsyncWriteOnlyDataCommand, DataFormat::U8, DisplayError, WriteOnlyDataCommand};
+use modular_bitfield::{bitfield, prelude::B4, BitfieldSpecifier};
 
 use self::consts::*;
-use display_interface::{
-    AsyncWriteOnlyDataCommand, DataFormat::U8, DisplayError, WriteOnlyDataCommand,
-};
+use crate::display::DisplayRotation;
 
 pub mod consts {
     //! Constants describing max supported display size and the display RAM layout.
@@ -32,6 +31,28 @@ pub mod consts {
 
     /// The highest valid display RAM column address.
     pub const BUF_COL_MAX: u8 = NUM_BUF_COLS - 1;
+}
+
+#[bitfield]
+#[repr(u8)]
+#[derive(Copy, Clone, Debug, Default)]
+pub struct DCDCSetting {
+    padding: B4,
+    pub frequency: DCDCFrequency,
+    pub dc_dc_enable: bool,
+}
+
+#[derive(BitfieldSpecifier, Copy, Clone, Debug)]
+#[bits = 3]
+pub enum DCDCFrequency {
+    Sf06 = 0b000,
+    Sf07 = 0b001,
+    Sf08 = 0b010,
+    Sf09 = 0b011,
+    Sf10 = 0b100,
+    Sf11 = 0b101,
+    Sf12 = 0b110,
+    Sf13 = 0b111,
 }
 
 /// The address increment orientation when writing image data. This configures how the SSD1322 will
@@ -140,13 +161,7 @@ pub enum Command {
     /// Set the direction of display address increment, column address remapping, data nibble
     /// remapping, COM scan direction, and COM line layout. See documentation for each enum for
     /// details.
-    SetRemapping(
-        IncrementAxis,
-        ColumnRemap,
-        NibbleRemap,
-        ComScanDirection,
-        ComLayout,
-    ),
+    SetRemapping(IncrementAxis, ColumnRemap, NibbleRemap, ComScanDirection, ComLayout),
     /// Set the display start line. Setting this to e.g. 40 will cause the first row of pixels on
     /// the display to display row 40 or the display RAM, and rows 0-39 of the display RAM will be
     /// wrapped to the bottom, "rolling" the displayed image upwards.  This transformation is
@@ -188,9 +203,6 @@ pub enum Command {
     SetComDeselectVoltage(u8),
     /// Set the contrast current. Range 0-255.
     SetContrastCurrent(u8),
-    /// Set the master contrast control, uniformly reducing all grayscale levels by 0-15
-    /// sixteenths. Range 0 (maximum dimming) to 15 (normal contrast).
-    SetMasterContrast(u8),
     /// Set the MUX ratio, which controls the number of COM lines that are active and thus the
     /// number of display pixel rows which are active. Which COM lines are active is controlled by
     /// `SetDisplayOffset`, and how the COM lines map to display RAM row addresses is controlled by
@@ -200,7 +212,7 @@ pub enum Command {
     /// blocks all commands except `SetCommandLock`.
     SetCommandLock(bool),
     /// use buildin DC-DC with 0.6 * 500 kHz
-    SetDCDCSetting(u8),
+    SetDCDCSetting(DCDCSetting),
     /// discharge level
     SetDischargeLevel(u8),
     /// remap segments
@@ -282,17 +294,16 @@ impl Command {
                 0x0F..=0x3F => ok_command!(arg_buf, 0xA8, [ratio]),
                 _ => Err(()),
             },
-            Command::SetDCDCSetting(ratio) => match ratio {
-                0x00..=0xFF => ok_command!(arg_buf, 0xAD, [ratio]),
-                _ => Err(()),
-            },
-            Command::SetRemapping(
-                increment_axis,
-                column_remap,
-                nibble_remap,
-                com_scan_direction,
-                com_layout,
-            ) => {
+            Command::SetDCDCSetting(dcdc) => {
+                let dcdc_bytes = dcdc.into_bytes()[0];
+                match dcdc_bytes {
+                    0x00..=0xFF => {
+                        ok_command!(arg_buf, 0xAD, [dcdc_bytes])
+                    }
+                    _ => Err(()),
+                }
+            }
+            Command::SetRemapping(increment_axis, column_remap, nibble_remap, com_scan_direction, com_layout) => {
                 let ia = match increment_axis {
                     IncrementAxis::Horizontal => 0x00,
                     IncrementAxis::Vertical => 0x01,
@@ -366,7 +377,7 @@ impl Command {
                 _ => Err(()),
             },
             Command::SetSecondPrechargePeriod(period) => match period {
-                0..=0x22 => ok_command!(arg_buf, 0xD9, [period]),
+                0..=0x40 => ok_command!(arg_buf, 0xD9, [period]),
                 _ => Err(()),
             },
             Command::SetDefaultGrayScaleTable => ok_command!(arg_buf, 0xB9, []),
@@ -375,14 +386,10 @@ impl Command {
                 _ => Err(()),
             },
             Command::SetComDeselectVoltage(voltage) => match voltage {
-                0..=0x50 => ok_command!(arg_buf, 0xDB, [voltage]),
+                0..=0x40 => ok_command!(arg_buf, 0xDB, [voltage]),
                 _ => Err(()),
             },
             Command::SetContrastCurrent(current) => ok_command!(arg_buf, 0x81, [current]),
-            Command::SetMasterContrast(contrast) => match contrast {
-                0..=15 => ok_command!(arg_buf, 0xC7, [contrast]),
-                _ => Err(()),
-            },
             Command::SetMuxRatio(ratio) => match ratio {
                 16..=NUM_PIXEL_ROWS => ok_command!(arg_buf, 0xCA, [ratio - 1]),
                 _ => Err(()),
@@ -445,17 +452,16 @@ impl Command {
                 0x0F..=0x3F => ok_command!(arg_buf, 0xA8, [ratio]),
                 _ => Err(()),
             },
-            Command::SetDCDCSetting(ratio) => match ratio {
-                0x00..=0xFF => ok_command!(arg_buf, 0xAD, [ratio]),
-                _ => Err(()),
-            },
-            Command::SetRemapping(
-                increment_axis,
-                column_remap,
-                nibble_remap,
-                com_scan_direction,
-                com_layout,
-            ) => {
+            Command::SetDCDCSetting(dcdc) => {
+                let dcdc_bytes = dcdc.into_bytes()[0];
+                match dcdc_bytes {
+                    0x00..=0xFF => {
+                        ok_command!(arg_buf, 0xAD, [dcdc_bytes])
+                    }
+                    _ => Err(()),
+                }
+            }
+            Command::SetRemapping(increment_axis, column_remap, nibble_remap, com_scan_direction, com_layout) => {
                 let ia = match increment_axis {
                     IncrementAxis::Horizontal => 0x00,
                     IncrementAxis::Vertical => 0x01,
@@ -529,7 +535,7 @@ impl Command {
                 _ => Err(()),
             },
             Command::SetSecondPrechargePeriod(period) => match period {
-                0..=0x22 => ok_command!(arg_buf, 0xD9, [period]),
+                0..=0x40 => ok_command!(arg_buf, 0xD9, [period]),
                 _ => Err(()),
             },
             Command::SetDefaultGrayScaleTable => ok_command!(arg_buf, 0xB9, []),
@@ -538,14 +544,10 @@ impl Command {
                 _ => Err(()),
             },
             Command::SetComDeselectVoltage(voltage) => match voltage {
-                0..=0x50 => ok_command!(arg_buf, 0xDB, [voltage]),
+                0..=0x40 => ok_command!(arg_buf, 0xDB, [voltage]),
                 _ => Err(()),
             },
             Command::SetContrastCurrent(current) => ok_command!(arg_buf, 0x81, [current]),
-            Command::SetMasterContrast(contrast) => match contrast {
-                0..=15 => ok_command!(arg_buf, 0xC7, [contrast]),
-                _ => Err(()),
-            },
             Command::SetMuxRatio(ratio) => match ratio {
                 16..=NUM_PIXEL_ROWS => ok_command!(arg_buf, 0xCA, [ratio - 1]),
                 _ => Err(()),
@@ -582,9 +584,7 @@ impl<'a> BufCommand<'a> {
                 let ok = table.len() == 15
                     && table[1..]
                         .iter()
-                        .fold((true, 0), |(ok_so_far, prev), cur| {
-                            (ok_so_far && prev < *cur && *cur <= 180, *cur)
-                        })
+                        .fold((true, 0), |(ok_so_far, prev), cur| (ok_so_far && prev < *cur && *cur <= 180, *cur))
                         .0
                     && table[0] <= table[1];
                 if ok {
@@ -619,9 +619,7 @@ impl<'a> BufCommand<'a> {
                 let ok = table.len() == 15
                     && table[1..]
                         .iter()
-                        .fold((true, 0), |(ok_so_far, prev), cur| {
-                            (ok_so_far && prev < *cur && *cur <= 180, *cur)
-                        })
+                        .fold((true, 0), |(ok_so_far, prev), cur| (ok_so_far && prev < *cur && *cur <= 180, *cur))
                         .0
                     && table[0] <= table[1];
                 if ok {

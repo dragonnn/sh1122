@@ -130,18 +130,21 @@ where
         //Command::SetScanDirection(0x00)
         //    .async_send(&mut self.iface)
         //    .await?;
-        Command::SetContrastCurrent(0x80).async_send(&mut self.iface).await?;
+        Command::SetContrastCurrent(0x15).async_send(&mut self.iface).await?;
         Command::SetMultiplexRatio(0x3F).async_send(&mut self.iface).await?;
-        Command::SetDCDCSetting(0x81).async_send(&mut self.iface).await?;
-        Command::SetClockDivider(0x50).async_send(&mut self.iface).await?;
+        Command::SetDCDCSetting(DCDCSetting::new().with_dc_dc_enable(false).with_frequency(DCDCFrequency::Sf10))
+            .async_send(&mut self.iface)
+            .await?;
+
+        Command::SetClockDivider(0b0001_0000).async_send(&mut self.iface).await?;
         Command::SetDisplayOffset(0x00).async_send(&mut self.iface).await?;
-        Command::SetSecondPrechargePeriod(0x22).async_send(&mut self.iface).await?;
+        Command::SetSecondPrechargePeriod(0x00).async_send(&mut self.iface).await?;
         Command::SetComDeselectVoltage(0x35).async_send(&mut self.iface).await?;
         Command::SetPreChargeVoltage(0x35).async_send(&mut self.iface).await?;
         Command::SetDischargeLevel(0x0).async_send(&mut self.iface).await?;
-        embassy_time::Timer::after_millis(100).await;
+        embassy_time::Timer::after_millis(10).await;
         self.sleep(false).await;
-        embassy_time::Timer::after_millis(100).await;
+        embassy_time::Timer::after_millis(10).await;
         Ok(())
     }
 
@@ -152,7 +155,7 @@ where
 
     /// Control the master contrast.
     pub async fn contrast(&mut self, contrast: u8) -> Result<(), DisplayError> {
-        Command::SetMasterContrast(contrast).async_send(&mut self.iface).await
+        Command::SetContrastCurrent(contrast).async_send(&mut self.iface).await
     }
 
     /// Set the display brightness look-up table.
