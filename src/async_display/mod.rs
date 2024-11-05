@@ -38,6 +38,7 @@ where
     pub(crate) rotation: DisplayRotation,
     display_size: PixelCoord,
     display_offset: PixelCoord,
+    contrast: u8,
     pub(crate) persistent_config: Option<PersistentConfig>,
 }
 impl<DI> AsyncDisplay<DI, BasicMode>
@@ -74,6 +75,7 @@ where
             display_size: display_size,
             display_offset: display_offset,
             persistent_config: None,
+            contrast: 15,
         }
     }
 }
@@ -90,6 +92,7 @@ where
             rotation: self.rotation,
             display_size: self.display_size,
             display_offset: self.display_offset,
+            contrast: 15,
             persistent_config: None,
         }
     }
@@ -130,7 +133,7 @@ where
         //Command::SetScanDirection(0x00)
         //    .async_send(&mut self.iface)
         //    .await?;
-        Command::SetContrastCurrent(0x15).async_send(&mut self.iface).await?;
+        Command::SetContrastCurrent(0).async_send(&mut self.iface).await?;
         Command::SetMultiplexRatio(0x3F).async_send(&mut self.iface).await?;
         Command::SetDCDCSetting(DCDCSetting::new().with_dc_dc_enable(false).with_frequency(DCDCFrequency::Sf10))
             .async_send(&mut self.iface)
@@ -139,9 +142,9 @@ where
         Command::SetClockDivider(0b0001_0000).async_send(&mut self.iface).await?;
         Command::SetDisplayOffset(0x00).async_send(&mut self.iface).await?;
         Command::SetSecondPrechargePeriod(0x00).async_send(&mut self.iface).await?;
-        Command::SetComDeselectVoltage(0x35).async_send(&mut self.iface).await?;
-        Command::SetPreChargeVoltage(0x35).async_send(&mut self.iface).await?;
-        Command::SetDischargeLevel(0x0).async_send(&mut self.iface).await?;
+        Command::SetComDeselectVoltage(0x00).async_send(&mut self.iface).await?;
+        Command::SetPreChargeVoltage(0x00).async_send(&mut self.iface).await?;
+        Command::SetDischargeLevel(0x00).async_send(&mut self.iface).await?;
         embassy_time::Timer::after_millis(10).await;
         self.sleep(false).await;
         embassy_time::Timer::after_millis(10).await;
@@ -154,13 +157,14 @@ where
     }
 
     /// Control the master contrast.
-    pub async fn contrast(&mut self, contrast: u8) -> Result<(), DisplayError> {
-        Command::SetContrastCurrent(contrast).async_send(&mut self.iface).await
+    pub async fn set_contrast(&mut self, contrast: u8) -> Result<(), DisplayError> {
+        Command::SetContrastCurrent(contrast).async_send(&mut self.iface).await?;
+        self.contrast = contrast;
+        Ok(())
     }
 
-    /// Set the display brightness look-up table.
-    pub async fn gray_scale_table(&mut self, table: &[u8]) -> Result<(), DisplayError> {
-        BufCommand::SetGrayScaleTable(table).async_send(&mut self.iface).await
+    pub fn get_contrast(&self) -> u8 {
+        self.contrast
     }
 
     /// Set the vertical pan.
